@@ -1,4 +1,4 @@
-#include "sim_ooo.h"
+#include "../sim_ooo.cc"//#include "sim_ooo.h"
 #include <iostream>
 #include <stdlib.h>
 #include <sstream>
@@ -8,19 +8,19 @@ using namespace std;
 /* Test case for pipelined simuator */ 
 /* DO NOT MODIFY */
 
-/* convert a float into an unsigned */
-inline unsigned float2unsigned(float value){
+/* convert a float into an unsigned */ // modifying. redefined in sim_ooo.cc :/
+/*inline unsigned float2unsigned(float value){
         unsigned result;
         memcpy(&result, &value, sizeof value);
         return result;
 }
 
-/* convert an unsigned into a float */
+ convert an unsigned into a float 
 inline float unsigned2float(unsigned value){
         float result;
         memcpy(&result, &value, sizeof value);
         return result;
-}
+}*/
 
 int main(int argc, char **argv){
 

@@ -690,5 +690,3 @@ unsigned sim_ooo::get_int_register_tag(unsigned reg){
 unsigned sim_ooo::get_fp_register_tag(unsigned reg){
 	return UNDEFINED; //please modify
 }
-
-
