@@ -1,5 +1,25 @@
 {
+    "cmake.sourceDirectory": "${workspaceFolder}/project2_code/c++",
     "files.associations": {
+        "algorithm": "cpp",
+        "array": "cpp",
+        "*.tcc": "cpp",
+        "deque": "cpp",
+        "map": "cpp",
+        "memory": "cpp",
+        "memory_resource": "cpp",
+        "optional": "cpp",
+        "ratio": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "system_error": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "unordered_map": "cpp",
+        "utility": "cpp",
+        "vector": "cpp",
+        "new": "cpp",
+        "cstring": "cpp",
         "iostream": "cpp"
     }
 }

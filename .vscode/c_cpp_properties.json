@@ -16,7 +16,7 @@
             "cppStandard": "gnu++17",
             "intelliSenseMode": "windows-gcc-x86",
             "compilerArgs": [
-                " -I ./ -sim_pipe -o testcase1 main.c"
+                ""//" -I ./ -sim_pipe -o testcase1 main.c"
             ],
             "configurationProvider": "ms-vscode.makefile-tools"
         }
