@@ -631,7 +631,80 @@ sim_ooo::~sim_ooo(){
    ============================================================= */
 
 /* core of the simulator */
-void sim_ooo::run(unsigned cycles){	
+void sim_ooo::run(unsigned cycles){	// cycles = stop target
+	unsigned local_cycles = 0; // cycles this function call
+	// if cycles == 0, run until EOP (return)
+	// if cycles != 0, run until cycle count 
+	while(local_cycles < cycles){
+		clock_cycles++;
+		local_cycles++;
+
+		// might need to do this in reverse order - can rearrange stages if necessary
+
+		// ----------------------------- ISSUE ----------------------------- 
+
+			// get instruction at pc
+			IReg = instr_memory[real_pc];
+			// check for structural hazards(no free RS or no free load/store buffer)
+
+			// Push to reservation station and ROB. increment PC.
+
+		// --------------------------- END ISSUE --------------------------- 
+
+
+
+		// ------------------------------ EXE ------------------------------ 
+			// For each RS:
+			//  If station is waiting on operands, monitor for broadcast.
+			//	if unit is available and has operands,
+			// 	send instruction to unit & mark as busy.	
+
+		// ---------------------------- END EXE ---------------------------- 
+
+
+
+		// ------------------------------- WR ------------------------------ 
+			// For each unit:
+			//  if instruction is done, write result to ROB.
+			// 	Broadcast result to all reservation stations in case they
+			// 	were waiting on tag from this execution unit. 
+			// 	(search all RS for a matching tag) 
+		// ----------------------------- END WR ---------------------------- 
+
+
+
+		// ----------------------------- COMMIT ---------------------------- 
+			// Action at top instruction of ROB (head points at this inst.)
+			// If EOP, return.
+			// If ALU/store instruction and result ready:
+			// 	store in reg/memory, clean this ROB entry, increment head
+			// If branch with correct prediction:
+			// 	clean this ROB entry, increment head
+			// If branch with incorrect prediction:
+			// 	Clear ROB (and execution units?), set PC to correct target address.
+		// --------------------------- END COMMIT -------------------------- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	}
 }
 
 //reset the state of the simulator - please complete
@@ -653,40 +726,85 @@ void sim_ooo::reset(){
 	}
 
 	//general purpose registers
-
+	for(int i = 0; i < NUM_GP_REGISTERS; i++){
+		fp_registers[i] = UNDEFINED;
+		int_registers[i] = UNDEFINED;
+	}
 	//pending_instructions
+	for(unsigned i = 0; i < pending_instructions.num_entries;i++){
+		reset_pending_instruction(i);
+	}
 
 	//rob
-
+	for(unsigned i=0; i< rob.num_entries;i++){
+		//rob_entry_t * current = rob.entries[i];
+		clean_rob(&rob.entries[i]);
+	}
 	//reservation_stations
+	for(unsigned i=0; i< reservation_stations.num_entries;i++){
+		reset_reservation_station(i);
+	}
+
 
 	//execution statistics
 	clock_cycles = 0;
 	instructions_executed = 0;
+	
 
 	//other required initializations
+	null_inst.dest = UNDEFINED;
+	null_inst.immediate = UNDEFINED;
+	null_inst.label = UNDEFINED;
+	null_inst.opcode = NOP;
+	null_inst.src1 = UNDEFINED;
+	null_inst.src2 = UNDEFINED;
+
+	IReg = null_inst;
+
+	real_pc = 0;
+	pc = instr_base_address;
 }
 
 /* registers related */
 
 int sim_ooo::get_int_register(unsigned reg){
-	return UNDEFINED; //please modify
+	return int_registers[reg]; 
 }
 
 void sim_ooo::set_int_register(unsigned reg, int value){
+	int_registers[reg] = value;
 }
 
 float sim_ooo::get_fp_register(unsigned reg){
-	return UNDEFINED; //please modify
+	return fp_registers[reg];
 }
 
 void sim_ooo::set_fp_register(unsigned reg, float value){
+	fp_registers[reg] = value;
 }
 
-unsigned sim_ooo::get_int_register_tag(unsigned reg){
+unsigned sim_ooo::get_int_register_tag(unsigned reg){ // for now, get_*_register_tag functions return value of register
 	return UNDEFINED; //please modify
 }
 
 unsigned sim_ooo::get_fp_register_tag(unsigned reg){
 	return UNDEFINED; //please modify
+}
+
+void sim_ooo::reset_pending_instruction(unsigned i){
+		pending_instructions.entries[i].commit = UNDEFINED;
+		pending_instructions.entries[i].exe = UNDEFINED;
+		pending_instructions.entries[i].issue = UNDEFINED;
+		pending_instructions.entries[i].pc = UNDEFINED;
+		pending_instructions.entries[i].wr = UNDEFINED;
+}
+
+void sim_ooo::reset_reservation_station(unsigned i){
+	reservation_stations.entries[i].address = UNDEFINED;
+	reservation_stations.entries[i].destination = UNDEFINED;
+	reservation_stations.entries[i].pc = UNDEFINED;
+	reservation_stations.entries[i].tag1 = UNDEFINED;
+	reservation_stations.entries[i].tag2 = UNDEFINED;
+	reservation_stations.entries[i].value1 = UNDEFINED;
+	reservation_stations.entries[i].value2 = UNDEFINED;
 }

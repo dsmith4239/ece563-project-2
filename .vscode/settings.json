@@ -20,6 +20,7 @@
         "vector": "cpp",
         "new": "cpp",
         "cstring": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "iomanip": "cpp"
     }
 }

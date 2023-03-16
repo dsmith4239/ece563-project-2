@@ -39,7 +39,8 @@ int main(int argc, char **argv){
         ooo->init_exec_unit(MEMORY, 1, 1);
 
 	//loads program in instruction memory at address 0x00000000
-	ooo->load_program("asm/code_ooo.asm", 0x00000000);
+	ooo->load_program("C:/Users/Smith/Desktop/NCSU/spring 23/ECE563/project/ece563-project-2/project2_code/c++/asm/code_ooo.asm", 0x00000000); //ooo->load_program("asm/code_ooo.asm", 0x00000000);
+
 
 	//initialize general purpose registers
 	ooo->set_int_register(1, 10);

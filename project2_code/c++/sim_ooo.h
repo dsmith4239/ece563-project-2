@@ -17,7 +17,7 @@ using namespace std;
 #define PROGRAM_SIZE 50 
 
 // instructions supported
-typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, AND, MULT, DIV, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
+typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, AND, MULT, DIV, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS, NOP} opcode_t;
 
 // reservation stations types
 typedef enum {INTEGER_RS, ADD_RS, MULT_RS, LOAD_B} res_station_t;
@@ -142,6 +142,21 @@ class sim_ooo{
 	//execution log
 	stringstream log;
 
+
+	// MY DECLARED VARIABLES
+	
+	// pc, register arrays
+	unsigned pc; // address based
+	unsigned real_pc; // index based
+
+	float fp_registers[NUM_GP_REGISTERS];
+	unsigned int_registers[NUM_GP_REGISTERS];
+
+	// null inst
+	instruction_t null_inst;
+
+	instruction_t IReg; // doesn't need to be in an array bc of reservations? + more than one instruction per stage
+
 public:
 
 	/* Instantiates the simulator
@@ -238,6 +253,12 @@ public:
 
 	//print log
 	void print_log();
+
+	// reset instruction
+	void reset_pending_instruction(unsigned index);
+
+	// reset RS
+	void reset_reservation_station(unsigned i);
 
 };
 
