@@ -633,6 +633,7 @@ sim_ooo::~sim_ooo(){
 /* core of the simulator */
 void sim_ooo::run(unsigned cycles){	// cycles = stop target
 	unsigned local_cycles = 0; // cycles this function call
+	pc = real_pc * 4 + instr_base_address;
 	// if cycles == 0, run until EOP (return)
 	// if cycles != 0, run until cycle count 
 	while(local_cycles < cycles){
@@ -641,15 +642,48 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 		// might need to do this in reverse order - can rearrange stages if necessary
 
-		// ----------------------------- ISSUE ----------------------------- 
 
-			// get instruction at pc
-			IReg = instr_memory[real_pc];
-			// check for structural hazards(no free RS or no free load/store buffer)
+		
+		// ----------------------------- COMMIT ---------------------------- 
+			// Action at top instruction of ROB (head points at this inst.)
+			rob_entry_t next_entry = rob.entries[ROB_headptr];
+			// If empty (entry.pc == undefined), do nothing. Else:
+			if(!(next_entry.pc == UNDEFINED)){
+				instruction_t entry_instruction = instr_memory[(next_entry.pc - instr_base_address) / 4]; // might need to change this if seg fault from 4/1 pc conversion
+			// 	If EOP, return.
+				if(entry_instruction.opcode == EOP) return;
+			// 	If ALU/store instruction and result ready:
+				if(next_entry.ready = true && isALUorSTORE(entry_instruction)){
+			// 		store in reg/memory, clean this ROB entry, increment head
+				}
+			// 	If branch with correct prediction (predict branch is not taken):
+				if(next_entry.ready = true && is_branch(entry_instruction.opcode)){
+			// 		clean this ROB entry, increment head
+					if(next_entry.value == 0){
+						clean_rob(&next_entry);
+					}
+			// 	If branch with incorrect prediction:
+					else if(next_entry.value == 1){
+			// 		Clear entire ROB (and execution units?), set PC to correct target address.
+						for(int i = 0; i < rob.num_entries; i++) clean_rob(&rob.entries[i]);
+						real_pc += (entry_instruction.immediate << 2); // 4/1
+						pc = real_pc * 4 + instr_base_address;
+					}
+				}
+			//	Increment head pointer. If pointer == rob size, wrap back to zero.
+				ROB_headptr++;
+				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
+			}
+		// --------------------------- END COMMIT -------------------------- 
 
-			// Push to reservation station and ROB. increment PC.
 
-		// --------------------------- END ISSUE --------------------------- 
+		// ------------------------------- WR ------------------------------ 
+			// For each unit:
+			//  if instruction is done, write result to ROB.
+			// 	Broadcast result to all reservation stations in case they
+			// 	were waiting on tag from this execution unit. 
+			// 	(search all RS for a matching tag) 
+		// ----------------------------- END WR ---------------------------- 
 
 
 
@@ -663,32 +697,15 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 
 
-		// ------------------------------- WR ------------------------------ 
-			// For each unit:
-			//  if instruction is done, write result to ROB.
-			// 	Broadcast result to all reservation stations in case they
-			// 	were waiting on tag from this execution unit. 
-			// 	(search all RS for a matching tag) 
-		// ----------------------------- END WR ---------------------------- 
+		// ----------------------------- ISSUE ----------------------------- 
 
+			// get instruction at pc
+			IReg = instr_memory[real_pc];
+			// check for structural hazards(no free RS or no free load/store buffer)
 
+			// Push to reservation station and ROB. increment PC.
 
-		// ----------------------------- COMMIT ---------------------------- 
-			// Action at top instruction of ROB (head points at this inst.)
-			// If EOP, return.
-			// If ALU/store instruction and result ready:
-			// 	store in reg/memory, clean this ROB entry, increment head
-			// If branch with correct prediction:
-			// 	clean this ROB entry, increment head
-			// If branch with incorrect prediction:
-			// 	Clear ROB (and execution units?), set PC to correct target address.
-		// --------------------------- END COMMIT -------------------------- 
-
-
-
-
-
-
+		// --------------------------- END ISSUE --------------------------- 
 
 
 
@@ -760,9 +777,8 @@ void sim_ooo::reset(){
 	null_inst.src2 = UNDEFINED;
 
 	IReg = null_inst;
-
 	real_pc = 0;
-	pc = instr_base_address;
+	ROB_headptr = 0;
 }
 
 /* registers related */
@@ -807,4 +823,35 @@ void sim_ooo::reset_reservation_station(unsigned i){
 	reservation_stations.entries[i].tag2 = UNDEFINED;
 	reservation_stations.entries[i].value1 = UNDEFINED;
 	reservation_stations.entries[i].value2 = UNDEFINED;
+}
+
+bool isALUorSTORE(instruction_t i){
+	return (
+		i.opcode == SWS ||
+		i.opcode == SW ||
+		i.opcode == ADD ||
+		i.opcode == ADDI ||
+		i.opcode == SUB ||
+		i.opcode == SUBI ||
+		i.opcode == XOR ||
+		i.opcode == AND ||
+		i.opcode == MULT ||
+		i.opcode == DIV ||
+		i.opcode == SWS ||
+		i.opcode == ADDS ||
+		i.opcode == SUBS ||
+		i.opcode == MULTS ||
+		i.opcode == DIVS
+	);
+}
+
+bool isBRANCH(instruction_t i){
+	return(
+		i.opcode == BEQZ ||
+		i.opcode == BGEZ ||
+		i.opcode == BGTZ ||
+		i.opcode == BLEZ || 
+		i.opcode == BLTZ ||
+		i.opcode == BNEZ
+	);
 }

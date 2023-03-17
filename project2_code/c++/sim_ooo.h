@@ -9,7 +9,7 @@
 
 using namespace std;
 
-#define UNDEFINED 0xFFFFFFFF //constant used for initialization
+#define UNDEFINED 0xFFFFFFFF // constant used for initialization
 #define NUM_GP_REGISTERS 32
 #define NUM_OPCODES 24
 #define NUM_STAGES 4
@@ -157,6 +157,8 @@ class sim_ooo{
 
 	instruction_t IReg; // doesn't need to be in an array bc of reservations? + more than one instruction per stage
 
+	unsigned ROB_headptr; // holds index of top of ROB - ++ after each successful commit, if equal to rob size rolls back to 0
+
 public:
 
 	/* Instantiates the simulator
@@ -259,6 +261,11 @@ public:
 
 	// reset RS
 	void reset_reservation_station(unsigned i);
+
+	// check opcode
+	bool isALUorSTORE(instruction_t i);
+
+	bool isBRANCH(instruction_t i);
 
 };
 
