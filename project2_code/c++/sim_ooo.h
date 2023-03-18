@@ -36,6 +36,8 @@ typedef struct{
         unsigned dest; //destination register
         unsigned immediate; //immediate field
         string label; //for conditional branches, label of the target instruction - used only for parsing/debugging purposes
+		unsigned pending_index; // holds location on pending instructions board
+		unsigned rob_index;
 } instruction_t;
 
 // execution unit
@@ -159,7 +161,8 @@ class sim_ooo{
 	instruction_t IReg; // doesn't need to be in an array bc of reservations? + more than one instruction per stage
 
 	unsigned ROB_headptr; // holds index of top of ROB - ++ after each successful commit, if equal to rob size rolls back to 0
-
+	unsigned PI_headptr; // holds index of top of pending index board - ++ after each instruction issue (value is stored per instruction)
+	unsigned ROB_nextindex;
 public:
 
 	/* Instantiates the simulator

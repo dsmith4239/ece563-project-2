@@ -153,9 +153,11 @@ unsigned alu(opcode_t opcode, unsigned value1, unsigned value2, unsigned immedia
   				(opcode == BGTZ && reg>0) ||       
   				(opcode == BLTZ && reg<0));
 				if (condition)
-	 				result = pc+4+immediate;
+	 				//result = pc+4+immediate;
+					result = 1;
 				else 
-					result = pc+4;
+					//result = pc+4;
+					result = 0;
 				break;
 	}
 	return 	result;
@@ -655,16 +657,19 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			// 	If ALU/store instruction and result ready:
 				if(next_entry.ready = true && isALUorSTORE(entry_instruction)){
 			// 		store in reg/memory, clean this ROB entry, increment head
-					// how though
-					
+					// use sets
+					clean_rob(&next_entry);
 				}
-			// 	If branch with correct prediction (predict branch is not taken):
+				// ----------------------------------------------------------
+			// 	If branch ( will need adjusting, next pc is computed within branch exe stage)
+			//  so exe unit result holds next pc. compare to what would be pc to determine:
+				// correct prediction (predict branch is not taken):
 				if(next_entry.ready = true && is_branch(entry_instruction.opcode)){
 			// 		clean this ROB entry, increment head
 					if(next_entry.value == 0){
 						clean_rob(&next_entry);
 					}
-			// 	If branch with incorrect prediction:
+			// 	If branch with incorrect prediction / misprediction:
 					else if(next_entry.value == 1){
 			// 		Clear entire ROB (and execution units?), set PC to correct target address.
 						for(int i = 0; i < rob.num_entries; i++) clean_rob(&rob.entries[i]);
@@ -672,9 +677,13 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						pc = real_pc * 4 + instr_base_address;
 					}
 				}
-			//	Increment head pointer. If pointer == rob size, wrap back to zero.
+				// ----------------------------------------------------------
+			//	Increment head pointer. If pointer == rob size, wrap back to zero. clear pending instruction
 				ROB_headptr++;
 				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
+				// CLEAR PENDING INSTRUCTION
+				reset_pending_instruction(entry_instruction.pending_index);
+
 			}
 		// --------------------------- END COMMIT -------------------------- 
 
@@ -696,9 +705,11 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						for(int j = 0; j < reservation_stations.num_entries; j++){
 							if(reservation_stations.entries[j].tag1 == i){
 								reservation_stations.entries[j].value1 = exec_units[i].result;
+								reservation_stations.entries[j].tag1 = UNDEFINED;
 							}
 							if(reservation_stations.entries[j].tag2 == i){
 								reservation_stations.entries[j].value2 = exec_units[i].result;
+								reservation_stations.entries[j].tag2 = UNDEFINED;
 							}
 						}
 					}
@@ -711,11 +722,19 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		// ------------------------------ EXE ------------------------------ 
 			// For each RS:
 			for(int j = 0; j < reservation_stations.num_entries; j++){
-			//  If station is waiting on operands, monitor for broadcast.
-			//	if unit is available and has operands,
-			// 	send instruction to unit & mark as busy.
-			}	
-
+			//  If station is waiting on operands (either tag != undefined), monitor for broadcast. otherwise,
+				if(reservation_stations.entries[j].tag1 != UNDEFINED && reservation_stations.entries[j].tag2 != UNDEFINED){
+			//		if unit is available and has operands,
+					instruction_t entry_instruction = instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4]; // 4/1
+					 
+					if(get_free_unit(entry_instruction.opcode) != UNDEFINED){
+						// send to unit, mark as busy, compute result
+						exec_units[get_free_unit(entry_instruction.opcode)].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
+						exec_units[get_free_unit(entry_instruction.opcode)].pc = reservation_stations.entries[j].pc;
+						exec_units[get_free_unit(entry_instruction.opcode)].result = alu(entry_instruction.opcode, entry_instruction.src1, entry_instruction.src2, entry_instruction.immediate, reservation_stations.entries[j].pc);
+					}
+				}	
+			}
 		// ---------------------------- END EXE ---------------------------- 
 
 
@@ -725,8 +744,31 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			// get instruction at pc
 			IReg = instr_memory[real_pc];
 			// check for structural hazards(no free RS or no free load/store buffer)
+			for(int i = 0; i < reservation_stations.num_entries; i++){
+				if(reservation_stations.entries[i].type){
+			// Push to reservation station (set tags if needed)
+				}
+			}
+			
+			// Push to ROB 
+			rob.entries[ROB_nextindex].destination = IReg.dest;
+			rob.entries[ROB_nextindex].pc = pc;
+			rob.entries[ROB_nextindex].ready = false;
+			rob.entries[ROB_nextindex].state = ISSUE;
+			rob.entries[ROB_nextindex].value = UNDEFINED;
+			
+			// Push to pending instruction list
+			pending_instructions.entries[PI_headptr].pc = real_pc;
+			pending_instructions.entries[PI_headptr].issue = clock_cycles;
+			instr_memory[real_pc].pending_index = PI_headptr; 
+			instr_memory[real_pc].rob_index = ROB_nextindex;
 
-			// Push to reservation station and ROB. increment PC.
+			ROB_nextindex++;
+			if(ROB_nextindex == rob.num_entries) ROB_nextindex = 0;
+			PI_headptr++;
+			if(PI_headptr == pending_instructions.num_entries) PI_headptr = 0;
+			real_pc++;
+			pc = real_pc * 4 + instr_base_address;
 
 		// --------------------------- END ISSUE --------------------------- 
 
@@ -763,6 +805,8 @@ void sim_ooo::reset(){
 		instr_memory[i].src2=UNDEFINED;
 		instr_memory[i].dest=UNDEFINED;
 		instr_memory[i].immediate=UNDEFINED;
+		instr_memory[i].pending_index = UNDEFINED; // new
+		instr_memory[i].rob_index = UNDEFINED; // new
 	}
 
 	//general purpose registers
@@ -798,10 +842,13 @@ void sim_ooo::reset(){
 	null_inst.opcode = NOP;
 	null_inst.src1 = UNDEFINED;
 	null_inst.src2 = UNDEFINED;
+	null_inst.pending_index = UNDEFINED;
 
 	IReg = null_inst;
 	real_pc = 0;
 	ROB_headptr = 0;
+	PI_headptr = 0;
+	ROB_nextindex = 0;
 }
 
 /* registers related */
@@ -848,6 +895,8 @@ void sim_ooo::reset_reservation_station(unsigned i){
 	reservation_stations.entries[i].value2 = UNDEFINED;
 }
 
+
+
 bool sim_ooo::isALUorSTORE(instruction_t i){
 	return (
 		i.opcode == SWS ||
@@ -867,6 +916,7 @@ bool sim_ooo::isALUorSTORE(instruction_t i){
 		i.opcode == DIVS
 	);
 }
+
 
 bool sim_ooo::isBRANCH(instruction_t i){
 	return(
