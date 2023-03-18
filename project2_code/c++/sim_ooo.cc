@@ -179,6 +179,7 @@ void sim_ooo::init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigned in
                 exec_units[num_units].latency = latency;
                 exec_units[num_units].busy = 0;
                 exec_units[num_units].pc = UNDEFINED;
+				exec_units[num_units].result = UNDEFINED;
                 num_units++;
         }
 }
@@ -640,8 +641,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		clock_cycles++;
 		local_cycles++;
 
-		// might need to do this in reverse order - can rearrange stages if necessary
-
+		// Decrement busy execution units
 
 		
 		// ----------------------------- COMMIT ---------------------------- 
@@ -655,6 +655,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			// 	If ALU/store instruction and result ready:
 				if(next_entry.ready = true && isALUorSTORE(entry_instruction)){
 			// 		store in reg/memory, clean this ROB entry, increment head
+					// how though
+					
 				}
 			// 	If branch with correct prediction (predict branch is not taken):
 				if(next_entry.ready = true && is_branch(entry_instruction.opcode)){
@@ -679,19 +681,40 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 		// ------------------------------- WR ------------------------------ 
 			// For each unit:
-			//  if instruction is done, write result to ROB.
-			// 	Broadcast result to all reservation stations in case they
-			// 	were waiting on tag from this execution unit. 
-			// 	(search all RS for a matching tag) 
+			for(int i = 0; i < num_units; i++){
+				if(exec_units[i].busy == 0 && exec_units[i].pc != UNDEFINED){
+			//  if instruction is done:
+			// 		write result to ROB.	
+					for(int i = 0; i < rob.num_entries; i++){
+						if(rob.entries[i].pc == exec_units[i].pc){
+							rob.entries[i].value = exec_units[i].result;
+						}
+					
+			// 		Broadcast result to all reservation stations in case they
+			// 		were waiting on tag from this execution unit. 
+			// 			(search all RS for a matching tag, update if tag matches) (i don't know if this is right at all)
+						for(int j = 0; j < reservation_stations.num_entries; j++){
+							if(reservation_stations.entries[j].tag1 == i){
+								reservation_stations.entries[j].value1 = exec_units[i].result;
+							}
+							if(reservation_stations.entries[j].tag2 == i){
+								reservation_stations.entries[j].value2 = exec_units[i].result;
+							}
+						}
+					}
+				}
+			}
 		// ----------------------------- END WR ---------------------------- 
 
 
 
 		// ------------------------------ EXE ------------------------------ 
 			// For each RS:
+			for(int j = 0; j < reservation_stations.num_entries; j++){
 			//  If station is waiting on operands, monitor for broadcast.
 			//	if unit is available and has operands,
-			// 	send instruction to unit & mark as busy.	
+			// 	send instruction to unit & mark as busy.
+			}	
 
 		// ---------------------------- END EXE ---------------------------- 
 
@@ -825,7 +848,7 @@ void sim_ooo::reset_reservation_station(unsigned i){
 	reservation_stations.entries[i].value2 = UNDEFINED;
 }
 
-bool isALUorSTORE(instruction_t i){
+bool sim_ooo::isALUorSTORE(instruction_t i){
 	return (
 		i.opcode == SWS ||
 		i.opcode == SW ||
@@ -845,7 +868,7 @@ bool isALUorSTORE(instruction_t i){
 	);
 }
 
-bool isBRANCH(instruction_t i){
+bool sim_ooo::isBRANCH(instruction_t i){
 	return(
 		i.opcode == BEQZ ||
 		i.opcode == BGEZ ||

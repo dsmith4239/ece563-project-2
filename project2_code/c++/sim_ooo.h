@@ -47,6 +47,7 @@ typedef struct{
                           // to the latency of the unit when the unit becomes busy, and decremented
                           // at each clock cycle
         unsigned pc; 	  // PC of the instruction using the functional unit
+		unsigned result;  // result
 } unit_t;
 
 // entry in the "instruction window"
@@ -266,6 +267,8 @@ public:
 	bool isALUorSTORE(instruction_t i);
 
 	bool isBRANCH(instruction_t i);
+
+	//void write_rob(unsigned target_pc, unsigned result);
 
 };
 
