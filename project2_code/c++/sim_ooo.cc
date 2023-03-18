@@ -743,33 +743,71 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 			// get instruction at pc
 			IReg = instr_memory[real_pc];
-			// check for structural hazards(no free RS or no free load/store buffer)
-			for(int i = 0; i < reservation_stations.num_entries; i++){
-				if(reservation_stations.entries[i].type){
-			// Push to reservation station (set tags if needed)
+			// check for structural hazards(free RS/load-store buffer)
+			unsigned found_rs = UNDEFINED;
+			// search reservation stations by type in ireg - matching type and empty
+			if(is_memory(IReg.opcode)){
+				for(unsigned i = 0; i < reservation_stations.num_entries; i++){
+					if(reservation_stations.entries[i].type == LOAD_B && reservation_stations.entries[i].pc == UNDEFINED){
+						found_rs = i;
+						reservation_stations.entries[i].address = IReg.dest; // probably not right
+					}
 				}
 			}
-			
-			// Push to ROB 
-			rob.entries[ROB_nextindex].destination = IReg.dest;
-			rob.entries[ROB_nextindex].pc = pc;
-			rob.entries[ROB_nextindex].ready = false;
-			rob.entries[ROB_nextindex].state = ISSUE;
-			rob.entries[ROB_nextindex].value = UNDEFINED;
-			
-			// Push to pending instruction list
-			pending_instructions.entries[PI_headptr].pc = real_pc;
-			pending_instructions.entries[PI_headptr].issue = clock_cycles;
-			instr_memory[real_pc].pending_index = PI_headptr; 
-			instr_memory[real_pc].rob_index = ROB_nextindex;
+			if(is_int(IReg.opcode)){
+				for(unsigned i = 0; i < reservation_stations.num_entries; i++){
+					if(reservation_stations.entries[i].type == INTEGER_RS && reservation_stations.entries[i].pc == UNDEFINED){
+						found_rs = i;
+					}
+				}
+			}
+			if(IReg.opcode == ADDS || IReg.opcode == SUBS){
+				for(unsigned i = 0; i < reservation_stations.num_entries; i++){
+					if(reservation_stations.entries[i].type == ADD_RS && reservation_stations.entries[i].pc == UNDEFINED){
+						found_rs = i;
+					}
+				}
+			}
+			if(IReg.opcode == MULTS || IReg.opcode == DIVS){
+				for(unsigned i = 0; i < reservation_stations.num_entries; i++){
+					if(reservation_stations.entries[i].type == MULT_RS && reservation_stations.entries[i].pc == UNDEFINED){
+						found_rs = i;
+					}
+				}
+			}
 
-			ROB_nextindex++;
-			if(ROB_nextindex == rob.num_entries) ROB_nextindex = 0;
-			PI_headptr++;
-			if(PI_headptr == pending_instructions.num_entries) PI_headptr = 0;
-			real_pc++;
-			pc = real_pc * 4 + instr_base_address;
+			if(found_rs != UNDEFINED){			
+			// if found, push to reservation station (how do i set tags)
+				reservation_stations.entries[found_rs].destination = IReg.dest;
+				reservation_stations.entries[found_rs].pc = real_pc;
+				reservation_stations.entries[found_rs].value1 = IReg.src1;
+				reservation_stations.entries[found_rs].value2 = IReg.src2;
+				// tags???
+			
+			// If we found a reservation station:
+				// Push to ROB 
+				rob.entries[ROB_nextindex].destination = IReg.dest;
+				rob.entries[ROB_nextindex].pc = pc;
+				rob.entries[ROB_nextindex].ready = false;
+				rob.entries[ROB_nextindex].state = ISSUE;
+				rob.entries[ROB_nextindex].value = UNDEFINED;
+			
+				// Push to pending instruction list
+				pending_instructions.entries[PI_headptr].pc = pc;
+				pending_instructions.entries[PI_headptr].issue = clock_cycles;
+				instr_memory[real_pc].pending_index = PI_headptr; 
+				instr_memory[real_pc].rob_index = ROB_nextindex;
 
+				ROB_nextindex++;
+				if(ROB_nextindex == rob.num_entries) ROB_nextindex = 0;
+				PI_headptr++;
+				if(PI_headptr == pending_instructions.num_entries) PI_headptr = 0;
+				real_pc++;
+				pc = real_pc * 4 + instr_base_address;
+			}
+
+			// if no free reservation station (structural hazard), 
+			// can't do anything - don't advance pc
 		// --------------------------- END ISSUE --------------------------- 
 
 
