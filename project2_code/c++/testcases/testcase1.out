@@ -109,7 +109,7 @@ Entry  Busy  Ready          PC     State  Dest       Value
 RESERVATION STATIONS
    Name  Busy          PC          Vj          Vk    Qj    Qk  Dest     Address
    Int1    no           -           -           -     -     -     -           -
-  Load1   yes  0x00000000  0x0000000a           -     -     -     0  0x00000014
+  Load1   yes  0x00000000  0x0000000a           -     -     -     0  0x0000000a
   Load2   yes  0x00000004  0x00000014           -     -     -     1  0x00000014
    Add1    no           -           -           -     -     -     -           -
    Add2    no           -           -           -     -     -     -           -

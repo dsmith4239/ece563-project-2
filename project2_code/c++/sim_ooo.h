@@ -152,8 +152,9 @@ class sim_ooo{
 	unsigned pc; // address based
 	unsigned real_pc; // index based
 
-	float fp_registers[NUM_GP_REGISTERS];
-	unsigned int_registers[NUM_GP_REGISTERS];
+	float int_fp_registers[NUM_GP_REGISTERS * 2];
+	//unsigned int_registers[NUM_GP_REGISTERS];
+	//float fp_registers[NUM_GP_REGISTERS];
 
 	// null inst
 	instruction_t null_inst;
