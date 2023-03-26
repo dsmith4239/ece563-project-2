@@ -50,6 +50,7 @@ typedef struct{
                           // at each clock cycle
         unsigned pc; 	  // PC of the instruction using the functional unit
 		unsigned result;  // result
+		bool released_this_cycle;
 } unit_t;
 
 // entry in the "instruction window"
@@ -81,6 +82,7 @@ typedef struct{
 	unsigned tag2;	    // Qk field
 	unsigned destination; // destination field
 	unsigned address;     // address field (for loads and stores)
+	bool received_tag_this_cycle;
 }res_station_entry_t;
 
 //instruction window 
