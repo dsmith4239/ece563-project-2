@@ -153,11 +153,11 @@ unsigned alu(opcode_t opcode, unsigned value1, unsigned value2, unsigned immedia
   				(opcode == BGTZ && reg>0) ||       
   				(opcode == BLTZ && reg<0));
 				if (condition)
-	 				//result = pc+4+immediate;
-					result = 1;
+	 				result = pc+4+immediate;
+					//result = 1;
 				else 
-					//result = pc+4;
-					result = 0;
+					result = pc+4;
+					//result = 0;
 				break;
 	}
 	return 	result;
@@ -785,6 +785,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		}
 
 		// ------------------------------ EXE ------------------------------ 
+			// might exe twice? might need to check pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe
+			
+			
 			// For each RS:
 			for(int j = 0; j < reservation_stations.num_entries; j++){
 				instruction_t entry_instruction;
@@ -800,7 +803,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						// int/fp alu rs: needs Vj Vk
 						|| (is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode)) && (
 							reservation_stations.entries[j].value1 != UNDEFINED && reservation_stations.entries[j].value2 != UNDEFINED
-						)
+						) || (is_branch(entry_instruction.opcode) && reservation_stations.entries[j].value1 != UNDEFINED)
 						
 					)
 					//reservation_stations.entries[j].tag1 != UNDEFINED && reservation_stations.entries[j].tag2 != UNDEFINED
@@ -813,7 +816,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						// send to unit, mark as busy, compute result
 						exec_units[unit_num].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
-						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode)) exec_units[unit_num].result = alu(entry_instruction.opcode, entry_instruction.src1, entry_instruction.src2, entry_instruction.immediate, reservation_stations.entries[j].pc);
+						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) exec_units[unit_num].result = alu(entry_instruction.opcode, reservation_stations.entries[j].value1, reservation_stations.entries[j].value2, entry_instruction.immediate, reservation_stations.entries[j].pc);
 						if(
 							exec_units[unit_num].type==MEMORY && (
 								entry_instruction.opcode == LWS || 
@@ -826,7 +829,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 									exec_units[unit_num].result = lmd;
 									reservation_stations.entries[j].address = base_byte_index;
 								}
-						pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe = clock_cycles;
+						if(pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe == UNDEFINED){
+							pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe = clock_cycles;
+						}
+						//if(is_branch(entry_instruction.opcode)) 
 						// set state to exe in rob
 						rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].state = EXECUTE;
 					}
