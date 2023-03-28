@@ -167,6 +167,7 @@ class sim_ooo{
 	unsigned ROB_headptr; // holds index of top of ROB - ++ after each successful commit, if equal to rob size rolls back to 0
 	unsigned PI_headptr; // holds index of top of pending index board - ++ after each instruction issue (value is stored per instruction)
 	unsigned ROB_nextindex;
+	unsigned last_instruction_pc;
 public:
 
 	/* Instantiates the simulator

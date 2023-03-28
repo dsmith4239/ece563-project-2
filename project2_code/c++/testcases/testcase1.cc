@@ -68,7 +68,7 @@ int main(int argc, char **argv){
 	cout << "First 20 clock cycles: inspecting the registers at each clock cycle..." << endl;
 	cout << "======================================================================" << endl << endl;
 
-	for (i=0; i<20; i++){
+	for (i=0; i<50; i++){ // change back to 20
 		cout << "CLOCK CYCLE #" << dec << i << endl;
 		ooo->run(1);
 		ooo->print_status();

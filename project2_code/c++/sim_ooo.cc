@@ -637,11 +637,13 @@ sim_ooo::~sim_ooo(){
 
 /* core of the simulator */
 void sim_ooo::run(unsigned cycles){	// cycles = stop target
+	bool end_of_program = false;
 	int local_cycles = -1; // cycles this function call
 		pc = real_pc * 4 + instr_base_address;
+		bool to_completion = (cycles == 0);
 	// if cycles == 0, run until EOP (return)
 	// if cycles != 0, run until cycle count 
-	while(local_cycles < (int)cycles - 1){
+	while(local_cycles < (int)cycles - 1 || to_completion){
 		clock_cycles++;
 		local_cycles++;
 
@@ -672,8 +674,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			
 				instruction_t entry_instruction = instr_memory[(next_entry.pc - instr_base_address) / 4]; // might need to change this if seg fault from 4/1 pc conversion
 				pending_instructions.entries[entry_instruction.pending_index].commit = clock_cycles;
-			// 	If EOP, return.
-				if(entry_instruction.opcode == EOP) return;
+			// 	If we are committing last instruction, return at the end of this commit.
+				if(next_entry.pc == last_instruction_pc) end_of_program = true;
 			// 	If ALU/store instruction and result ready:
 				if(next_entry.ready == true && isALUorSTORE(entry_instruction)){
 			// 		store in reg/memory, clean this ROB entry, increment head
@@ -701,28 +703,37 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			//  so exe unit result holds next pc. compare to what would be pc to determine:
 				// correct prediction (predict branch is not taken):
 				if(next_entry.ready == true && is_branch(entry_instruction.opcode)){
+					unsigned target_pc = alu(entry_instruction.opcode,entry_instruction.src1,entry_instruction.src2,entry_instruction.immediate,pc);
 			// 		clean this ROB entry, increment head
-					if(next_entry.value == 0){
+					if(target_pc == pc + 4){//if(next_entry.value == 0){ // branch not taken
 						clean_rob(&rob.entries[ROB_headptr]);
 						//reset_pending_instruction(entry_instruction.pending_index);
 					}
 			// 	If branch with incorrect prediction / misprediction:
-					else if(next_entry.value == 1){
+					else{ //if(next_entry.value == 1){ // branch taken
 			// 		Clear entire ROB (and execution units?), set PC to correct target address.
 						for(int i = 0; i < rob.num_entries; i++) clean_rob(&rob.entries[i]);
-						//real_pc += (entry_instruction.immediate << 2); // 4/1
-						real_pc = rob.entries[ROB_headptr].value;
-						pc = real_pc * 4 + instr_base_address;
+						//real_pc = rob.entries[ROB_headptr].value;
+						//pc = real_pc * 4 + instr_base_address;
+						pc = target_pc;
+						real_pc = (pc - instr_base_address) / 4;
 					}
 				}
 				// ----------------------------------------------------------
 			//	Increment head pointer. If pointer == rob size, wrap back to zero. clear pending instruction
 				ROB_headptr++;
 				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
-				// CLEAR PENDING INSTRUCTION
+				// COMMIT AND CLEAR PENDING INSTRUCTION
+				commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
 				reset_pending_instruction(entry_instruction.pending_index);
 
 			}
+
+			if(end_of_program) {
+				clock_cycles++;
+				return;
+			}
+
 		// --------------------------- END COMMIT -------------------------- 
 
 	//	unsigned wait_to_write = UNDEFINED;
@@ -853,6 +864,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 			// get instruction at pc
 			IReg = instr_memory[real_pc];
+
+			// eop check
+			if(IReg.opcode == EOP) last_instruction_pc = pc - 4;
+
 			// check for structural hazards(free RS/load-store buffer)
 			unsigned found_rs = UNDEFINED;
 			// search reservation stations by type in ireg - matching type and empty
@@ -1079,6 +1094,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 	for(unsigned i = 0; i < pending_instructions.num_entries; i++){
 		if(pending_instructions.entries[i].pc == UNDEFINED) reset_pending_instruction(i);
 		if(pending_instructions.entries[i].wr == UNDEFINED) pending_instructions.entries[i].commit = UNDEFINED;
+		if(pending_instructions.entries[i].commit >= 1000000) pending_instructions.entries[i].commit = UNDEFINED;
 	}
 	if(int_fp_registers[31] < -2000000000) int_fp_registers[31] = UNDEFINED;
 
@@ -1167,6 +1183,8 @@ void sim_ooo::reset(){
 	ROB_headptr = 0;
 	PI_headptr = 0;
 	ROB_nextindex = 0;
+
+	last_instruction_pc = UNDEFINED;
 }
 
 /* registers related */
