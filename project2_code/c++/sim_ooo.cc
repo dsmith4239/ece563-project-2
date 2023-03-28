@@ -6,6 +6,7 @@
 #include <string>
 #include <iomanip>
 #include <map>
+#include <vector>
 
 using namespace std;
 
@@ -759,32 +760,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			}
 		// ----------------------------- END WR ---------------------------- 
 
-		// CDB broadcast
-
-		// 		Broadcast result to all reservation stations in case they
-		// 		were waiting on tag from this execution unit. 
-		// 			(search all RS for a matching tag, update if tag matches the unit's instruction's entry on the rob's index)
-			
-
-		for(int i = 0; i < num_units; i++){
-			if(exec_units[i].busy == 0){
-				for(int j = 0; j < rob.num_entries; j++){
-					for(int k = 0; k < reservation_stations.num_entries; k++){
-						if(reservation_stations.entries[k].tag1 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
-							reservation_stations.entries[k].value1 = exec_units[i].result;
-							reservation_stations.entries[k].tag1 = UNDEFINED;
-							reservation_stations.entries[k].received_tag_this_cycle = true;
-						}
-						if(reservation_stations.entries[k].tag2 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
-							reservation_stations.entries[k].value2 = exec_units[i].result;
-							reservation_stations.entries[k].tag2 = UNDEFINED;
-							reservation_stations.entries[k].received_tag_this_cycle = true;
-						}
-					}
-				}
-			}
-		}
-
+		
 		// ------------------------------ EXE ------------------------------ 
 			// might exe twice? might need to check pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe
 			
@@ -843,7 +819,32 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		// ---------------------------- END EXE ---------------------------- 
 
 
-		
+		// CDB broadcast (moved from after WR to after EXE)
+
+		// 		Broadcast result to all reservation stations in case they
+		// 		were waiting on tag from this execution unit. 
+		// 			(search all RS for a matching tag, update if tag matches the unit's instruction's entry on the rob's index)
+			
+
+		for(int i = 0; i < num_units; i++){
+			if(exec_units[i].busy == 0){
+				for(int j = 0; j < rob.num_entries; j++){
+					for(int k = 0; k < reservation_stations.num_entries; k++){
+						if(reservation_stations.entries[k].tag1 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
+							reservation_stations.entries[k].value1 = exec_units[i].result;
+							reservation_stations.entries[k].tag1 = UNDEFINED;
+							reservation_stations.entries[k].received_tag_this_cycle = true;
+						}
+						if(reservation_stations.entries[k].tag2 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
+							reservation_stations.entries[k].value2 = exec_units[i].result;
+							reservation_stations.entries[k].tag2 = UNDEFINED;
+							reservation_stations.entries[k].received_tag_this_cycle = true;
+						}
+					}
+				}
+			}
+		}
+
 		
 
 
@@ -1191,19 +1192,44 @@ unsigned sim_ooo::get_int_register_tag(unsigned reg){ // for now, get_*_register
 }
 
 unsigned sim_ooo::get_fp_register_tag(unsigned reg){
+
+	// find latest issued instruction on pending
+	int current_latest_cycle = UNDEFINED;
+	unsigned pindex = UNDEFINED;
+	unsigned rval = UNDEFINED;
+	for(int i = 0; i < pending_instructions.num_entries; i++){
+		if(instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].dest == reg && ((int)pending_instructions.entries[i].issue > (int)current_latest_cycle)){
+			current_latest_cycle = pending_instructions.entries[i].issue;
+			pindex = i;
+		}
+	}
+	//if(pindex == UNDEFINED) return UNDEFINED;
+	
+	if(pindex != UNDEFINED) rval = (instr_memory[(pending_instructions.entries[pindex].pc - instr_base_address)/4].rob_index);
+	return rval;
+	// return (instr_memory[pending index . pc]).rob_index
+
+
+
+	/*
 	// set tag of instruction destination equal to rob entry index :)
 	//return UNDEFINED; //please modify
 	unsigned rval = UNDEFINED;
+	unsigned target = reg + NUM_GP_REGISTERS;
+	//unsigned 
+	unsigned issue_cycle = 0;
 	stage_t rloc;
 	for(int j = 0; j < rob.num_entries; j++){
-		if(rob.entries[j].destination == reg + NUM_GP_REGISTERS) {
+		unsigned compare = 0;
+		if(rob.entries[j].pc != UNDEFINED) compare = pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address)/4].pending_index].issue;
+		if(rob.entries[j].destination == target && compare > issue_cycle) {
 			rval = j;
-			rloc = rob.entries[j].state;
-			
+			//rloc = rob.entries[j].state;
+			//issue_cycle = 
 			
 		}
 	}
-	return rval;
+	return rval;*/
 }
 
 void sim_ooo::reset_pending_instruction(unsigned i){
