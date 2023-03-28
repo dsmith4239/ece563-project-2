@@ -478,7 +478,7 @@ void sim_ooo::load_program(const char *filename, unsigned base_address){
         if (search == opcodes.end()){
 		// this is a label for a branch - extract it and save it in the labels map
 		string label = string(token).substr(0, string(token).length() - 1);
-		labels[label]=instruction_nr;
+		labels[label+"\r"]=instruction_nr; // had to change provided function
 		// move to next token, which must be the instruction opcode
 		token = strtok (NULL, " \t");
 		search = opcodes.find(token);
@@ -566,7 +566,7 @@ void sim_ooo::load_program(const char *filename, unsigned base_address){
             instr.opcode == BGEZ || instr.opcode == BLEZ ||
             instr.opcode == JUMP
 	 ){
-		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2;
+		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2; // had to change provided function
 	}
         i++;
    }
@@ -804,7 +804,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						reservation_stations.entries[j].instr_exed_this_cycle = true;	// update rs so a new instruction doesnt enter same cycle
 						exec_units[unit_num].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
-						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) exec_units[unit_num].result = alu(entry_instruction.opcode, reservation_stations.entries[j].value1, reservation_stations.entries[j].value2, entry_instruction.immediate, reservation_stations.entries[j].pc);
+						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) {
+							exec_units[unit_num].result = alu(entry_instruction.opcode, reservation_stations.entries[j].value1, reservation_stations.entries[j].value2, entry_instruction.immediate, reservation_stations.entries[j].pc);
+						}
 						if(
 							exec_units[unit_num].type==MEMORY && (
 								entry_instruction.opcode == LWS || 
