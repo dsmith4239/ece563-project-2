@@ -60,6 +60,7 @@ typedef struct{
 	unsigned exe;	// clock cycle when the instruction enters execution
 	unsigned wr;	// clock cycle when the instruction enters write result
 	unsigned commit;// clock cycle when the instruction commits (for stores, clock cycle when the store starts committing 
+	bool released_this_cycle;
 } instr_window_entry_t;
 
 // ROB entry
@@ -69,6 +70,7 @@ typedef struct{
 	stage_t state;	// state field
 	unsigned destination; // destination field
 	unsigned value;	      // value field
+	bool branch_taken;
 }rob_entry_t;
 
 // reservation station entry

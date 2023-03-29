@@ -82,6 +82,7 @@ void clean_rob(rob_entry_t *entry){
         entry->state=ISSUE;
         entry->destination=UNDEFINED;
         entry->value=UNDEFINED;
+		entry->branch_taken = false;
 }
 
 /* clears a reservation station */
@@ -478,7 +479,7 @@ void sim_ooo::load_program(const char *filename, unsigned base_address){
         if (search == opcodes.end()){
 		// this is a label for a branch - extract it and save it in the labels map
 		string label = string(token).substr(0, string(token).length() - 1);
-		labels[label+"\r"]=instruction_nr; // had to change provided function
+		labels[label]=instruction_nr;
 		// move to next token, which must be the instruction opcode
 		token = strtok (NULL, " \t");
 		search = opcodes.find(token);
@@ -540,8 +541,8 @@ void sim_ooo::load_program(const char *filename, unsigned base_address){
 		case BGTZ:
 		case BLEZ:
 		case BGEZ:
-			par1 = strtok (NULL, " \t");
-			par2 = strtok (NULL, " \t");
+			par1 = strtok (NULL, " \r");
+			par2 = strtok (NULL, " \r");	// changed \t to \r (-:
 			instr_memory[instruction_nr].src1 = atoi(strtok(par1, "R"));
 			instr_memory[instruction_nr].label = par2;
 			break;
@@ -641,6 +642,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 	int local_cycles = -1; // cycles this function call
 		pc = real_pc * 4 + instr_base_address;
 		bool to_completion = (cycles == 0);
+		bool branched_this_cycle = false;
 	// if cycles == 0, run until EOP (return)
 	// if cycles != 0, run until cycle count 
 	while(local_cycles < (int)cycles - 1 || to_completion){
@@ -705,18 +707,43 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				if(next_entry.ready == true && is_branch(entry_instruction.opcode)){
 					unsigned target_pc = alu(entry_instruction.opcode,entry_instruction.src1,entry_instruction.src2,entry_instruction.immediate,pc);
 			// 		clean this ROB entry, increment head
-					if(target_pc == pc + 4){//if(next_entry.value == 0){ // branch not taken
+					if(!next_entry.branch_taken){//if(next_entry.value == 0){ // branch not taken
 						clean_rob(&rob.entries[ROB_headptr]);
 						//reset_pending_instruction(entry_instruction.pending_index);
 					}
 			// 	If branch with incorrect prediction / misprediction:
 					else{ //if(next_entry.value == 1){ // branch taken
 			// 		Clear entire ROB (and execution units?), set PC to correct target address.
+						commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
+						int dummy_index = next_entry.pc + 4;
+						
+						for(int i = 0; i < pending_instructions.num_entries; i++){
+							for(int j = 0; j < pending_instructions.num_entries; j++){
+								// if this instruction is equal to the committed +4, commit and add another 4
+								if(pending_instructions.entries[j].pc == dummy_index) {commit_to_log(pending_instructions.entries[j]);
+									reset_pending_instruction(j);
+									dummy_index = dummy_index + 4;
+								}
+							}
+						}
+						
+						for(int i = 0; i < MAX_UNITS; i++){
+							exec_units[i].busy = 0;
+							exec_units[i].pc = UNDEFINED;
+							exec_units[i].released_this_cycle = false;
+							exec_units[i].result = UNDEFINED;
+						}
 						for(int i = 0; i < rob.num_entries; i++) clean_rob(&rob.entries[i]);
+						for(int i = 0; i < pending_instructions.num_entries; i++) reset_pending_instruction(i);
+						for(int i = 0; i < reservation_stations.num_entries; i++) reset_reservation_station(i);
 						//real_pc = rob.entries[ROB_headptr].value;
 						//pc = real_pc * 4 + instr_base_address;
-						pc = target_pc;
+						pc = next_entry.value;
+						branched_this_cycle = true;
 						real_pc = (pc - instr_base_address) / 4;
+						ROB_headptr = -1;
+						PI_headptr = 0;
+						ROB_nextindex = 0;
 					}
 				}
 				// ----------------------------------------------------------
@@ -724,8 +751,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				ROB_headptr++;
 				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
 				// COMMIT AND CLEAR PENDING INSTRUCTION
-				commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
+				if(!branched_this_cycle)commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
 				reset_pending_instruction(entry_instruction.pending_index);
+				pending_instructions.entries[entry_instruction.pending_index].released_this_cycle = true;
 
 			}
 
@@ -806,6 +834,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
 						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) {
 							exec_units[unit_num].result = alu(entry_instruction.opcode, reservation_stations.entries[j].value1, reservation_stations.entries[j].value2, entry_instruction.immediate, reservation_stations.entries[j].pc);
+							if(exec_units[unit_num].result == pc+entry_instruction.immediate){ // branch taken
+								rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].branch_taken = true;
+							}
 						}
 						if(
 							exec_units[unit_num].type==MEMORY && (
@@ -863,6 +894,15 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 
 		// ----------------------------- ISSUE ----------------------------- 
+		if(!branched_this_cycle){
+
+
+		// issue width handling - loop through issue (width) times
+		for(int issue_num = 0; issue_num < issue_width; issue_num++){
+
+		if(pending_instructions.entries[PI_headptr].issue != UNDEFINED || pending_instructions.entries[PI_headptr].released_this_cycle == true) break; // if no room, stop
+
+			//if(pending_instructions.entries[PI_headptr].released_this_cycle == false){
 
 			// get instruction at pc
 			IReg = instr_memory[real_pc];
@@ -1062,7 +1102,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				/*	if() reservation_stations.entries[found_rs].tag1 = ROB_nextindex;
 				if() reservation_stations.entries[found_rs].tag2 = ROB_nextindex;*/
 			
-			// If we found a reservation station:
+			// If we found a reservation station & pending instruction:
 				// Push to ROB 
 				if(!is_branch(IReg.opcode))rob.entries[ROB_nextindex].destination = IReg.dest + NUM_GP_REGISTERS;
 				if(is_int(IReg.opcode)) rob.entries[ROB_nextindex].destination = IReg.dest; //fp
@@ -1091,6 +1131,15 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			// if no free reservation station (structural hazard), 
 			// can't do anything - don't advance pc
 		// --------------------------- END ISSUE --------------------------- 
+		//}
+		}
+	}
+
+
+
+
+
+
 
 	// bandaids (squashed memory problems)
 	for(unsigned i = 0; i < pending_instructions.num_entries; i++){
@@ -1258,6 +1307,7 @@ void sim_ooo::reset_pending_instruction(unsigned i){
 		pending_instructions.entries[i].issue = UNDEFINED;
 		pending_instructions.entries[i].pc = UNDEFINED;
 		pending_instructions.entries[i].wr = UNDEFINED;
+		pending_instructions.entries[i].released_this_cycle = false;
 }
 
 void sim_ooo::reset_reservation_station(unsigned i){
