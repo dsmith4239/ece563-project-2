@@ -170,6 +170,8 @@ class sim_ooo{
 	unsigned PI_headptr; // holds index of top of pending index board - ++ after each instruction issue (value is stored per instruction)
 	unsigned ROB_nextindex;
 	unsigned last_instruction_pc;
+
+	bool finished;
 public:
 
 	/* Instantiates the simulator
