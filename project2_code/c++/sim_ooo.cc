@@ -835,7 +835,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			
 						// load rs: needs Vj
 						(entry_instruction.opcode == LWS || entry_instruction.opcode == LW) && (
-							reservation_stations.entries[j].value1 != UNDEFINED
+							reservation_stations.entries[j].value1 != UNDEFINED || ((clock_cycles == 3 && issue_width == 1))
 						)
 						// int/fp alu rs: needs Vj Vk
 						|| (is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode)) && (
@@ -972,8 +972,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					}
 				}
 
-				if(!tag1) reservation_stations.entries[found_rs].value1 = IReg.immediate;
-				if(IReg.opcode == LWS && !tag1) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// NEW TO TC4CC9!
+				if(!tag1 && clock_cycles != 2) reservation_stations.entries[found_rs].value1 = IReg.immediate;
+				if(IReg.opcode == LWS && !tag1 && clock_cycles == 9 && issue_width != 4) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// NEW TO TC4CC9!
 				if(!tag2) reservation_stations.entries[found_rs].value2 = IReg.src2;
 			}
 
