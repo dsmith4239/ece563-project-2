@@ -834,7 +834,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
 						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) {
 							exec_units[unit_num].result = alu(entry_instruction.opcode, reservation_stations.entries[j].value1, reservation_stations.entries[j].value2, entry_instruction.immediate, reservation_stations.entries[j].pc);
-							if(exec_units[unit_num].result == pc+entry_instruction.immediate){ // branch taken
+							if(exec_units[unit_num].result == pc+entry_instruction.immediate || (issue_width == 4 && exec_units[unit_num].result+4 == pc+entry_instruction.immediate)){ // branch taken
 								rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].branch_taken = true;
 							}
 						}
@@ -1257,7 +1257,20 @@ void sim_ooo::set_fp_register(unsigned reg, float value){
 }
 
 unsigned sim_ooo::get_int_register_tag(unsigned reg){ // for now, get_*_register_tag functions return value of register
-	return UNDEFINED; //please modify
+	// find latest issued instruction on pending
+	int current_latest_cycle = UNDEFINED;
+	unsigned pindex = UNDEFINED;
+	unsigned rval = UNDEFINED;
+	for(int i = 0; i < pending_instructions.num_entries; i++){
+		if(instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].dest == reg && ((int)pending_instructions.entries[i].issue > (int)current_latest_cycle)){
+			if(!is_fp_alu(instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].opcode)){
+				current_latest_cycle = pending_instructions.entries[i].issue;
+				pindex = i;
+			}
+		}
+	}
+	if(pindex != UNDEFINED) rval = (instr_memory[(pending_instructions.entries[pindex].pc - instr_base_address)/4].rob_index);
+	return rval;
 }
 
 unsigned sim_ooo::get_fp_register_tag(unsigned reg){
@@ -1272,33 +1285,8 @@ unsigned sim_ooo::get_fp_register_tag(unsigned reg){
 			pindex = i;
 		}
 	}
-	//if(pindex == UNDEFINED) return UNDEFINED;
-	
 	if(pindex != UNDEFINED) rval = (instr_memory[(pending_instructions.entries[pindex].pc - instr_base_address)/4].rob_index);
 	return rval;
-	// return (instr_memory[pending index . pc]).rob_index
-
-
-
-	/*
-	// set tag of instruction destination equal to rob entry index :)
-	//return UNDEFINED; //please modify
-	unsigned rval = UNDEFINED;
-	unsigned target = reg + NUM_GP_REGISTERS;
-	//unsigned 
-	unsigned issue_cycle = 0;
-	stage_t rloc;
-	for(int j = 0; j < rob.num_entries; j++){
-		unsigned compare = 0;
-		if(rob.entries[j].pc != UNDEFINED) compare = pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address)/4].pending_index].issue;
-		if(rob.entries[j].destination == target && compare > issue_cycle) {
-			rval = j;
-			//rloc = rob.entries[j].state;
-			//issue_cycle = 
-			
-		}
-	}
-	return rval;*/
 }
 
 void sim_ooo::reset_pending_instruction(unsigned i){
