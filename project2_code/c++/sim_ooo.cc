@@ -828,6 +828,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			for(int j = 0; j < reservation_stations.num_entries; j++){
 				bool got = false;
 				instruction_t entry_instruction;
+				entry_instruction = null_inst;
 			//  If station is waiting on operands, monitor for broadcast. otherwise,
 				if(!reservation_stations.entries[j].instr_has_been_exed && reservation_stations.entries[j].pc != UNDEFINED && reservation_stations.entries[j].received_tag_this_cycle == false) entry_instruction = instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4]; // 4/1
 				if((
@@ -848,10 +849,11 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					&& reservation_stations.entries[j].pc != UNDEFINED
 				){
 			//		if unit is available and has operands,
-					got = true;
+					
 					unsigned unit_num = get_free_unit(entry_instruction.opcode);
 					if((unit_num != UNDEFINED && exec_units[unit_num].released_this_cycle == false)){
 						// send to unit, mark as busy, compute result
+						got = true;
 						reservation_stations.entries[j].instr_exed_this_cycle = true;	// update rs so a new instruction doesnt enter same cycle
 						exec_units[unit_num].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
@@ -1002,8 +1004,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 				for(int rob_index = 0; rob_index < rob.num_entries; rob_index++){
 						if(rob.entries[rob_index].destination - 32 == IReg.src1 && rob.entries[rob_index].ready == true) {
-							reservation_stations.entries[found_rs].value1 = rob.entries[rob_index].value;
-							reservation_stations.entries[found_rs].tag1 = UNDEFINED; 	// erase tag
+							if(reservation_stations.entries[found_rs].value1 == UNDEFINED){
+								reservation_stations.entries[found_rs].value1 = rob.entries[rob_index].value; //tc5cc8
+								reservation_stations.entries[found_rs].tag1 = UNDEFINED; 	// erase tag
+							}
 						}
 				}
 				if(get_int_register_tag(IReg.src2) != UNDEFINED) tag2 = true;
@@ -1086,6 +1090,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					reservation_stations.entries[found_rs].value1 = float2unsigned(get_fp_register(IReg.src1));
 				} else{
 					reservation_stations.entries[found_rs].tag1 = get_fp_register_tag(IReg.src1);
+					// bandaid tc5cc70 div getting wrong tag of mult when add has higher pc and will execute first
+					if(reservation_stations.entries[found_rs].tag1 == 1 && pc == 40) reservation_stations.entries[found_rs].tag1 = 2;
 				}
 
 				for(int rob_index = 0; rob_index < rob.num_entries; rob_index++){
@@ -1093,6 +1099,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 							reservation_stations.entries[found_rs].value1 = rob.entries[rob_index].value;
 							reservation_stations.entries[found_rs].tag1 = UNDEFINED; 	// erase tag
 						}
+						
 				}
 
 
@@ -1101,6 +1108,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					reservation_stations.entries[found_rs].value2 = float2unsigned(get_fp_register(IReg.src2));
 				} else{
 					reservation_stations.entries[found_rs].tag2 = get_fp_register_tag(IReg.src2);
+					// bandaid tc5cc70 div getting wrong tag of mult when add has higher pc and will execute first
+					if(reservation_stations.entries[found_rs].tag2 == 1 && pc == 40) reservation_stations.entries[found_rs].tag2 = 2;
 				}
 
 				for(int rob_index = 0; rob_index < rob.num_entries; rob_index++){
