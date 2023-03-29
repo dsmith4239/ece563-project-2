@@ -94,6 +94,8 @@ void clean_res_station(res_station_entry_t *entry){
         entry->tag2=UNDEFINED;
         entry->destination=UNDEFINED;
         entry->address=UNDEFINED;
+		entry->instr_has_been_exed = false;
+		
 }
 
 /* clears an entry if the instruction window */
@@ -824,9 +826,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			
 			// For each RS:
 			for(int j = 0; j < reservation_stations.num_entries; j++){
+				bool got = false;
 				instruction_t entry_instruction;
 			//  If station is waiting on operands, monitor for broadcast. otherwise,
-				if(reservation_stations.entries[j].pc != UNDEFINED && reservation_stations.entries[j].received_tag_this_cycle == false) entry_instruction = instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4]; // 4/1
+				if(!reservation_stations.entries[j].instr_has_been_exed && reservation_stations.entries[j].pc != UNDEFINED && reservation_stations.entries[j].received_tag_this_cycle == false) entry_instruction = instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4]; // 4/1
 				if((
 			
 						// load rs: needs Vj
@@ -845,9 +848,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					&& reservation_stations.entries[j].pc != UNDEFINED
 				){
 			//		if unit is available and has operands,
-					
+					got = true;
 					unsigned unit_num = get_free_unit(entry_instruction.opcode);
-					if(unit_num != UNDEFINED && exec_units[unit_num].released_this_cycle == false){
+					if((unit_num != UNDEFINED && exec_units[unit_num].released_this_cycle == false)){
 						// send to unit, mark as busy, compute result
 						reservation_stations.entries[j].instr_exed_this_cycle = true;	// update rs so a new instruction doesnt enter same cycle
 						exec_units[unit_num].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
@@ -882,7 +885,8 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						// set state to exe in rob
 						rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].state = EXECUTE;
 					}
-				}	
+				}
+				if(got) reservation_stations.entries[j].instr_has_been_exed = true;
 			}
 		// ---------------------------- END EXE ---------------------------- 
 
@@ -955,13 +959,13 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					}
 				}
 
-				for(int tag_id = 0; tag_id < num_units; tag_id++){
-					if(instr_memory[(exec_units[tag_id].pc - instr_base_address) / 4].dest == IReg.src1){
-						reservation_stations.entries[found_rs].tag1 = instr_memory[(exec_units[tag_id].pc - instr_base_address) / 4].rob_index;
+				for(int tag_id = 0; tag_id < reservation_stations.num_entries; tag_id++){
+					if(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].dest == IReg.src1){ // base this off of RS not exe unit
+						reservation_stations.entries[found_rs].tag1 = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].rob_index;
 						tag1 = true;
 					}
-					if(instr_memory[(exec_units[tag_id].pc - instr_base_address) / 4].dest == IReg.src2){
-						reservation_stations.entries[found_rs].tag2 = instr_memory[(exec_units[tag_id].pc - instr_base_address) / 4].rob_index;
+					if(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].dest == IReg.src2){
+						reservation_stations.entries[found_rs].tag2 = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].rob_index;
 						tag2 = true;
 					}
 				}
@@ -1182,14 +1186,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 	if(int_fp_registers[31] < -2000000000) int_fp_registers[31] = UNDEFINED;
 
 
-
-
-
-
-
-
-
-
 	}
 }
 
@@ -1342,6 +1338,7 @@ void sim_ooo::reset_reservation_station(unsigned i){
 	reservation_stations.entries[i].value2 = UNDEFINED;
 	reservation_stations.entries[i].received_tag_this_cycle = false;
 	reservation_stations.entries[i].instr_exed_this_cycle = false;
+	reservation_stations.entries[i].instr_has_been_exed = false;
 }
 
 

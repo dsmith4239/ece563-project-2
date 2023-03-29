@@ -86,6 +86,7 @@ typedef struct{
 	unsigned address;     // address field (for loads and stores)
 	bool received_tag_this_cycle;
     bool instr_exed_this_cycle;
+	bool instr_has_been_exed;
 }res_station_entry_t;
 
 //instruction window 
