@@ -1,4 +1,4 @@
-#include "sim_ooo.h"
+#include "../sim_ooo.cc"//#include "sim_ooo.h"
 #include <iostream>
 #include <stdlib.h>
 #include <sstream>
@@ -9,18 +9,18 @@ using namespace std;
 /* DO NOT MODIFY */
 
 /* convert a float into an unsigned */
-inline unsigned float2unsigned(float value){
+/*inline unsigned float2unsigned(float value){
         unsigned result;
         memcpy(&result, &value, sizeof value);
         return result;
-}
+}*/
 
 /* convert an unsigned into a float */
-inline float unsigned2float(unsigned value){
+/*inline float unsigned2float(unsigned value){
         float result;
         memcpy(&result, &value, sizeof value);
         return result;
-}
+}*/
 
 int main(int argc, char **argv){
 
@@ -39,7 +39,7 @@ int main(int argc, char **argv){
         ooo->init_exec_unit(MEMORY, 5, 1);
 
 	//loads program in instruction memory at address 0x00000000
-	ooo->load_program("asm/code_ooo4.asm", 0x00000000);
+	ooo->load_program("C:/Users/Smith/Desktop/NCSU/spring 23/ECE563/project/ece563-project-2/project2_code/c++/asm/code_ooo4.asm", 0x00000000);//	ooo->load_program("asm/code_ooo4.asm", 0x00000000);
 
 	//initialize general purpose registers
 	ooo->set_int_register(1, 0xA000);

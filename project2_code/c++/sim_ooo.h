@@ -71,6 +71,9 @@ typedef struct{
 	unsigned destination; // destination field
 	unsigned value;	      // value field
 	bool branch_taken;
+	bool store_committed;	// used since store takes >1cc in commit
+	unsigned store_exit_cc;
+	unsigned store_mem_unit_index;
 }rob_entry_t;
 
 // reservation station entry
@@ -173,6 +176,8 @@ class sim_ooo{
 	unsigned last_instruction_pc;
 
 	bool finished;
+
+	unsigned data_mem_latency;
 public:
 
 	/* Instantiates the simulator
