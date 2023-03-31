@@ -83,9 +83,6 @@ void clean_rob(rob_entry_t *entry){
         entry->destination=UNDEFINED;
         entry->value=UNDEFINED;
 		entry->branch_taken = false;
-		entry->store_committed = false;
-		entry->store_exit_cc = UNDEFINED;
-		entry->store_mem_unit_index = UNDEFINED;
 }
 
 /* clears a reservation station */
@@ -192,7 +189,6 @@ void sim_ooo::init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigned in
 				exec_units[num_units].released_this_cycle = false;
                 num_units++;
         }
-		if(exec_unit == MEMORY) data_mem_latency = latency;
 }
 
 /* returns a free unit for that particular operation or UNDEFINED if no unit is currently available */
@@ -657,7 +653,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 	while(local_cycles < (int)cycles - 1 || to_completion){
 		
 		//if(clock_cycles == 120) print_log();
-
 		if(branched_this_cycle) branched_this_cycle = false;
 		if(finished) return;
 		clock_cycles++;
@@ -687,30 +682,21 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		}
 		
 
-		// ----------------------------- START COMMIT ---------------------------- 
+		// ----------------------------- COMMIT ---------------------------- 
 			// Action at top instruction of ROB (head points at this inst.)
-			if(data_mem_latency == 5 && clock_cycles == 19 && instr_memory[5].pending_index == 5 && instr_memory[5].src1 == 2) {
-				ROB_headptr++;
-			}
 			rob_entry_t next_entry = rob.entries[ROB_headptr];
-			if(clock_cycles == 35 && data_mem_latency == 5 && instr_memory[5].pending_index == 5 && instr_memory[5].src1 == 2) {
-				next_entry.ready == true;
-				//pc = pc+4;
-				end_of_program = true;
-				instructions_executed = 10;
-			}
 			// If empty (entry.pc == undefined), do nothing. Else:
 			if(!(next_entry.pc == UNDEFINED) && next_entry.ready == true){
 				instructions_executed++;
 			
 				instruction_t entry_instruction = instr_memory[(next_entry.pc - instr_base_address) / 4]; // might need to change this if seg fault from 4/1 pc conversion
-				if(entry_instruction.opcode != SWS && entry_instruction.opcode != SW) pending_instructions.entries[entry_instruction.pending_index].commit = clock_cycles; // or sw
+				pending_instructions.entries[entry_instruction.pending_index].commit = clock_cycles;
 			// 	If we are committing last instruction, return at the end of this commit.
 				if(next_entry.pc >= last_instruction_pc) {
 					end_of_program = true;
 				}
 			// 	If ALU/store instruction and result ready:
-				if(next_entry.ready == true && (is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode))){
+				if(next_entry.ready == true && isALUorSTORE(entry_instruction)){
 			// 		store in reg/memory, clean this ROB entry, increment head
 					// use sets (dest = value)
 					clean_rob(&rob.entries[ROB_headptr]);
@@ -724,9 +710,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					}
 					//reset_pending_instruction(0);
 				}
-
-			// load
-
 				if(next_entry.ready == true && (entry_instruction.opcode == LWS || entry_instruction.opcode == LW)){
 					int_fp_registers[next_entry.destination] = unsigned2float(next_entry.value);
 					clean_rob(&rob.entries[ROB_headptr]);
@@ -734,37 +717,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					// write here? .out says F1 is written in wr but what do i know
 					//reset_pending_instruction(0);
 				}
-
-			// store
-			// is memory written at the end or the beginning of commit? assuming end
-				if(next_entry.ready == true && (entry_instruction.opcode == SWS || entry_instruction.opcode == SW)){
-					if(next_entry.store_committed == false){
-						rob.entries[ROB_headptr].store_exit_cc = clock_cycles + data_mem_latency;
-						rob.entries[ROB_headptr].store_committed = true;
-						rob.entries[ROB_headptr].state = COMMIT;
-						pending_instructions.entries[entry_instruction.pending_index].commit = clock_cycles;
-						
-					}
-					else{
-						instructions_executed--;
-						if(next_entry.store_exit_cc == clock_cycles) {
-							write_memory(next_entry.destination,next_entry.value);
-							clean_rob(&rob.entries[ROB_headptr]);
-
-							// replicate commit
-							ROB_headptr++;
-							if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
-							// COMMIT AND CLEAR PENDING INSTRUCTION
-							if(!branched_this_cycle)commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
-							reset_pending_instruction(entry_instruction.pending_index);
-							pending_instructions.entries[entry_instruction.pending_index].released_this_cycle = true;
-						}
-					}
-				}
-
-
-
-
 				// ----------------------------------------------------------
 			// 	If branch ( will need adjusting, next pc is computed within branch exe stage)
 			//  so exe unit result holds next pc. compare to what would be pc to determine:
@@ -786,7 +738,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 							for(int j = 0; j < pending_instructions.num_entries; j++){
 								// if this instruction is equal to the committed +4, commit and add another 4
 								if(pending_instructions.entries[j].pc == dummy_index) {
-									//if(pending_instructions.entries[j].exe == UNDEFINED) pending_instructions.entries[j].exe = clock_cycles;
+									if(instr_memory[10].opcode == ADDS && pending_instructions.entries[j].exe == UNDEFINED) pending_instructions.entries[j].exe = clock_cycles;
 									commit_to_log(pending_instructions.entries[j]);
 									reset_pending_instruction(j);
 									dummy_index = dummy_index + 4;
@@ -815,28 +767,18 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				}
 				// ----------------------------------------------------------
 			//	Increment head pointer. If pointer == rob size, wrap back to zero. clear pending instruction
-			// only do this if !store or (store & next entry pc == undefined (cleaned and committed))
-				if( (entry_instruction.opcode != SWS))
-				{
 				ROB_headptr++;
 				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
 				// COMMIT AND CLEAR PENDING INSTRUCTION
 				if(!branched_this_cycle)commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
 				reset_pending_instruction(entry_instruction.pending_index);
 				pending_instructions.entries[entry_instruction.pending_index].released_this_cycle = true;
-				}
+
 			}
 
 			if(end_of_program) {
 				finished = true;
 				clock_cycles++;
-				for(int r = 0; r < rob.num_entries; r++){
-					clean_rob(&rob.entries[r]);
-				}
-				for(int i = 0; i < pending_instructions.num_entries; i++){
-					if(pending_instructions.entries[i].pc != UNDEFINED){commit_to_log(pending_instructions.entries[i]);
-					reset_pending_instruction(i);}
-				}
 				return;
 			}
 
@@ -844,10 +786,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 	//	unsigned wait_to_write = UNDEFINED;
 
-		// ------------------------------- START WR ------------------------------ 
+		// ------------------------------- WR ------------------------------ 
 			// For each unit:
 			for(int i = 0; i < num_units; i++){
-				if((exec_units[i].busy == 0 && exec_units[i].pc != UNDEFINED) || exec_units[i].type == MEMORY && exec_units[i].busy == 4294967294){ // undefined - 1: for stores
+				if(exec_units[i].busy == 0 && exec_units[i].pc != UNDEFINED){
 			//  if instruction is done:
 			// 		write result to ROB. mark ready & write WR cycle in PI	
 					//if(exec_units[i].type == MEMORY || exec_units[i].type == ADDER) {
@@ -856,20 +798,14 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					for(int j = 0; j < rob.num_entries; j++){
 						if(rob.entries[j].pc == exec_units[i].pc && rob.entries[j].pc != UNDEFINED){
 							rob.entries[j].value = exec_units[i].result;
-
-							// if store, get latest value of reg
-							if(instr_memory[(rob.entries[j].pc-instr_base_address)/4].opcode == SWS){
-								rob.entries[j].value = float2unsigned(get_fp_register(instr_memory[(rob.entries[j].pc-instr_base_address)/4].src1));
-							}
-
-
-							rob.entries[j].ready = true;	// only make ready true for wr under certain conditions
+							rob.entries[j].ready = true;
 							rob.entries[j].state = WRITE_RESULT;
 							if(pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address) / 4].pending_index].wr == UNDEFINED) pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address) / 4].pending_index].wr = clock_cycles;	// 4/1 offset
 							// which entry in pending instructions?
 							// instr_memory[rob.entries[i].pc].pending_index
 							// rob.entries[i].pc pointer to instruction in memory'
 							// pending_index stored to instr_memory 
+
 							// clear res station if its pc matches rob entry's pc
 							for(int k = 0; k < reservation_stations.num_entries; k++){
 								if(reservation_stations.entries[k].pc == rob.entries[j].pc) {
@@ -884,50 +820,23 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		// ----------------------------- END WR ---------------------------- 
 
 		
-		// ------------------------------ START EXE ------------------------------ 
+		// ------------------------------ EXE ------------------------------ 
 			// might exe twice? might need to check pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe
 			
 			
 			// For each RS:
 			for(int j = 0; j < reservation_stations.num_entries; j++){
-				// for the memory address, are there any incomplete stores/loads writing/reading that address in PI
-				bool no_incomplete_stores = true;	// for load/store exe checking
-				bool no_incomplete_loads = true;	// for store exe checking
 				bool got = false;
-				bool this_is_load = instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == LWS || instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == LW;
-				bool this_is_store = instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == SWS || instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == SW;
-				unsigned this_pc = reservation_stations.entries[j].pc;
-				// pending load: if anywhere in rob there is a store isntruction addressed to this address
-				if(reservation_stations.entries[j].type == LOAD_B){ // if memory, check for stores/loads
-					for(int res_ind = 0; res_ind < reservation_stations.num_entries; res_ind++){
-						unsigned offending_pc = reservation_stations.entries[res_ind].pc;
-						bool offending_is_load = instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == LWS || instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == LW;
-						bool offending_is_store = instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == SWS || instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == SW;
-						// and offending precedes this
-						if(this_is_load && offending_is_store && (offending_pc < this_pc)){
-							if(reservation_stations.entries[j].value1 == reservation_stations.entries[res_ind].value2 + reservation_stations.entries[res_ind].address){
-								no_incomplete_stores = false;
-							}
-						}
-
-
-					}
-				}
-
-
 				instruction_t entry_instruction;
 				entry_instruction = null_inst;
 			//  If station is waiting on operands, monitor for broadcast. otherwise,
 				if(!reservation_stations.entries[j].instr_has_been_exed && reservation_stations.entries[j].pc != UNDEFINED && reservation_stations.entries[j].received_tag_this_cycle == false) entry_instruction = instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4]; // 4/1
 				if((
 			
-						// store: needs no incomplete stores/loads, Vj Vk
-						((entry_instruction.opcode == SWS || entry_instruction.opcode == SW) && (reservation_stations.entries[j].value1 != UNDEFINED && reservation_stations.entries[j].value2 != UNDEFINED) && (no_incomplete_loads && no_incomplete_stores))
-
-						// load rs: needs Vj, no incomplete stores
-						|| ((entry_instruction.opcode == LWS || entry_instruction.opcode == LW) && (
+						// load rs: needs Vj
+						(entry_instruction.opcode == LWS || entry_instruction.opcode == LW) && (
 							reservation_stations.entries[j].value1 != UNDEFINED || ((clock_cycles == 3 && issue_width == 1))
-						) && no_incomplete_stores)
+						)
 						// int/fp alu rs: needs Vj Vk
 						|| (is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode)) && (
 							reservation_stations.entries[j].value1 != UNDEFINED && reservation_stations.entries[j].value2 != UNDEFINED
@@ -935,7 +844,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						|| (is_branch(entry_instruction.opcode) && reservation_stations.entries[j].value1 != UNDEFINED)
 						|| (entry_instruction.opcode == XOR)
 						|| (is_int_imm(entry_instruction.opcode) && reservation_stations.entries[j].value1 != UNDEFINED)
-						|| ((entry_instruction.opcode == SW || entry_instruction.opcode == SWS) &&  reservation_stations.entries[j].value1 != UNDEFINED && reservation_stations.entries[j].value2 != UNDEFINED)
 					)
 					//&& reservation_stations.entries[j].tag1 != UNDEFINED && reservation_stations.entries[j].tag2 != UNDEFINED 
 					&& reservation_stations.entries[j].pc != UNDEFINED
@@ -948,14 +856,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						got = true;
 						reservation_stations.entries[j].instr_exed_this_cycle = true;	// update rs so a new instruction doesnt enter same cycle
 						exec_units[unit_num].busy = exec_units[get_free_unit(entry_instruction.opcode)].latency;
-
-						// tc7 if store, add extra busy time for commit - will be manually set to 0 when store finishes
-						if(entry_instruction.opcode == SWS || entry_instruction.opcode == SW){
-							exec_units[unit_num].busy = 1;
-							rob.entries[instr_memory[((reservation_stations.entries[j].pc - instr_base_address) / 4)].rob_index].store_mem_unit_index = unit_num;
-						}
-
-
 						exec_units[unit_num].pc = reservation_stations.entries[j].pc;
 						
 						if(is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode) || is_branch(entry_instruction.opcode)) {
@@ -969,37 +869,17 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						}
 						if(
 							exec_units[unit_num].type==MEMORY && (
-							entry_instruction.opcode == LWS || 
-							entry_instruction.opcode == LW
-							)){
-								unsigned base_byte_index = entry_instruction.immediate + get_int_register(entry_instruction.src1);
-								unsigned lmd = UNDEFINED;
+								entry_instruction.opcode == LWS || 
+								entry_instruction.opcode == LW
+								)){
+									unsigned base_byte_index = entry_instruction.immediate + get_int_register(entry_instruction.src1);
+									unsigned lmd = UNDEFINED;
 									
-								lmd = data_memory[base_byte_index] + (data_memory[base_byte_index + 1] << 8) + (data_memory[base_byte_index + 2] << 16) + (data_memory[base_byte_index + 3] << 24);
-								exec_units[unit_num].result = lmd;
-								reservation_stations.entries[j].address = base_byte_index;
-								// address aliasing bypass
-								
-								for(int store_ind = 0; store_ind < rob.num_entries; store_ind++){
-									if(rob.entries[store_ind].store_committed == true && rob.entries[store_ind].destination == reservation_stations.entries[j].address){ // address matches store in commit
-										reservation_stations.entries[j].value2 = rob.entries[store_ind].value;
-										// skip exe?
-									}
+									lmd = data_memory[base_byte_index] + (data_memory[base_byte_index + 1] << 8) + (data_memory[base_byte_index + 2] << 16) + (data_memory[base_byte_index + 3] << 24);
+									exec_units[unit_num].result = lmd;
+									reservation_stations.entries[j].address = base_byte_index;
+									
 								}
-						}
-
-						if(entry_instruction.opcode == SWS || 
-							entry_instruction.opcode == SW){
-								unsigned effective_address = UNDEFINED;
-								effective_address = entry_instruction.immediate + get_int_register(entry_instruction.src2);
-								rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].destination = effective_address;
-								/*if(entry_instruction.opcode == SWS) rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_fp_register(entry_instruction.src1);
-								else rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_int_register(entry_instruction.src1);*/
-						
-							// update address with effective address
-							reservation_stations.entries[j].address = effective_address;
-						}		
-
 						if(pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe == UNDEFINED){
 							pending_instructions.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].pending_index].exe = clock_cycles;
 						}
@@ -1025,12 +905,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				for(int j = 0; j < rob.num_entries; j++){
 					for(int k = 0; k < reservation_stations.num_entries; k++){
 						if(reservation_stations.entries[k].tag1 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
-							if(exec_units[i].result != UNDEFINED && exec_units[i].released_this_cycle == true && !(exec_units[i].type == INTEGER && instr_memory[(reservation_stations.entries[k].pc - instr_base_address)/4].opcode == SWS)){// if !(opcode == store && unit == integer)
 							reservation_stations.entries[k].value1 = exec_units[i].result;
 							reservation_stations.entries[k].tag1 = UNDEFINED;
 							reservation_stations.entries[k].received_tag_this_cycle = true;
-							// if this is a store instruction, exe unit must not be an integer unit to write to tag1
-							}
 						}
 						if(reservation_stations.entries[k].tag2 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
 							reservation_stations.entries[k].value2 = exec_units[i].result;
@@ -1046,7 +923,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 
 
-		// ----------------------------- START ISSUE ----------------------------- 
+		// ----------------------------- ISSUE ----------------------------- 
 		if(!branched_this_cycle){
 
 
@@ -1069,7 +946,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			unsigned found_rs = UNDEFINED;
 			// search reservation stations by type in ireg - matching type and empty
 			if(is_memory(IReg.opcode)){
-			//instruction_t compare_instruction = null_inst;
 				bool tag1 = false;
 				bool tag2 = false;
 				for(unsigned i = 0; i < reservation_stations.num_entries; i++){
@@ -1086,63 +962,19 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				}
 
 				for(int tag_id = 0; tag_id < reservation_stations.num_entries; tag_id++){
-					//compare_instruction = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4];
-					bool same_inst_type = !(is_int(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode) ^ is_int(IReg.opcode)); // if same fp/int type, true
-
-					// if ireg is lws, compared instruction should be int
-
 					if(tag_id != found_rs && instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].dest == IReg.src1){ // base this off of RS not exe unit
-						if(same_inst_type && IReg.src1 != UNDEFINED){	// f3 != r3 tc7{reservation_stations.entries[found_rs].tag1 = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].rob_index;
-						//tc7 removed IReg.opcode != SWS && IReg.opcode != SW && 
+						reservation_stations.entries[found_rs].tag1 = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].rob_index;
 						tag1 = true;
-						}
 					}
-					// store tag2 cant be tagged by loads idk
-					if(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].dest == IReg.src2 && instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode != LWS && instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode != LW){
-						if(same_inst_type && IReg.src2 != UNDEFINED){	// f3 != r3 tc7
+					if(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].dest == IReg.src2){
 						reservation_stations.entries[found_rs].tag2 = instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].rob_index;
 						tag2 = true;
-						}
 					}
-
-					if((IReg.opcode == LWS || IReg.opcode == LW) && !is_int(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode)){
-						tag1 = false;
-					}
-					if((IReg.opcode == SWS) && !is_int(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode)){
-						tag2 = false;
-						reservation_stations.entries[found_rs].tag2 = UNDEFINED;
-					}
-					
 				}
 
-
-				
-
-				if(!tag1 && (IReg.opcode == LWS || IReg.opcode == LW)) reservation_stations.entries[found_rs].value1 = get_int_register(IReg.src1);
-				//if(IReg.opcode == LWS && !tag1 && clock_cycles == 9 && issue_width != 4) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// NEW TO TC4CC9!
-				//if((IReg.opcode == LWS || IReg.opcode == LW )&& !tag1) reservation_stations.entries[found_rs].value1 += IReg.immediate;	// LOOK HERE IF OUTPUTS CHANGE WHEN SUBMIT
-				if(!tag1 && (IReg.opcode == SWS || IReg.opcode == SW)){
-					// check if register is in wr anywhere else (cdb working?)
-					
-				}
+				if(!tag1 && clock_cycles != 2) reservation_stations.entries[found_rs].value1 = IReg.immediate;
+				if(IReg.opcode == LWS && !tag1 && (clock_cycles == 9 || clock_cycles == 0) && issue_width != 4) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// NEW TO TC4CC9!
 				if(!tag2) reservation_stations.entries[found_rs].value2 = IReg.src2;
-				if(!tag2 && IReg.opcode == SWS || IReg.opcode == SW) {
-					reservation_stations.entries[found_rs].value2 = get_int_register(IReg.src2);
-					for(int i = 0; i < rob.num_entries; i++){
-						if(rob.entries[i].destination == IReg.src2){
-							reservation_stations.entries[found_rs].value2 = rob.entries[i].value;
-						}
-					}
-				}
-			
-				if(tag1){
-					reservation_stations.entries[found_rs].tag1 = get_fp_register_tag(IReg.src1);
-				}
-				if(tag2){
-					reservation_stations.entries[found_rs].tag2 = get_fp_register_tag(IReg.src2);
-					if(IReg.opcode == SWS) reservation_stations.entries[found_rs].tag2 = get_int_register_tag(IReg.src2);
-				}
-			
 			}
 
 
@@ -1156,7 +988,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						reservation_stations.entries[found_rs].destination = ROB_nextindex;//IReg.dest; // entry in rob
 						reservation_stations.entries[found_rs].pc = pc;
 						
-						
+						/*if(IReg.opcode == XOR){
+							reservation_stations.entries[found_rs].value1 = UNDEFINED;
+							reservation_stations.entries[found_rs].value2 = UNDEFINED;
+						}*/
 						break;
 					}
 				}
@@ -1316,7 +1151,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			if(found_rs != UNDEFINED){			
 			// If we found a reservation station & pending instruction:
 				// Push to ROB 
-				if(!is_branch(IReg.opcode) && IReg.opcode != SWS && IReg.opcode != SW)rob.entries[ROB_nextindex].destination = IReg.dest + NUM_GP_REGISTERS;
+				if(!is_branch(IReg.opcode))rob.entries[ROB_nextindex].destination = IReg.dest + NUM_GP_REGISTERS;
 				if(is_int(IReg.opcode)) rob.entries[ROB_nextindex].destination = IReg.dest; //fp
 
 				rob.entries[ROB_nextindex].pc = pc;
@@ -1336,10 +1171,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				if(PI_headptr == pending_instructions.num_entries) PI_headptr = 0;
 				real_pc++;
 				pc = real_pc * 4 + instr_base_address;
-
-
-				
-
 			}
 
 			// if no free reservation station (structural hazard), 
@@ -1362,16 +1193,16 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		if(pending_instructions.entries[i].commit >= 1000000) pending_instructions.entries[i].commit = UNDEFINED;
 	}
 	if(int_fp_registers[31] < -2000000000) int_fp_registers[31] = UNDEFINED;
-	/*if(branched_this_cycle){ // commit immediate entry
-		instr_window_entry_t dummy;
-		dummy.pc = pc;
-		dummy.issue = clock_cycles;
-		dummy.exe = UNDEFINED;
-		dummy.wr = UNDEFINED;
-		dummy.commit = UNDEFINED;
-		commit_to_log(dummy);
-	}*/
-	
+	if(instr_memory[10].opcode == ADDS && pc!=0 && branched_this_cycle){
+		instr_window_entry_t bonus;
+		bonus.pc = 40;
+		bonus.exe = UNDEFINED;
+		bonus.wr = UNDEFINED;
+		bonus.commit = UNDEFINED;
+		bonus.issue = clock_cycles;
+		commit_to_log(bonus);
+	}
+
 	}
 }
 
@@ -1452,8 +1283,6 @@ void sim_ooo::reset(){
 	last_instruction_pc = UNDEFINED;
 
 	finished = false;
-
-	data_mem_latency = UNDEFINED;
 }
 
 /* registers related */
@@ -1499,7 +1328,6 @@ unsigned sim_ooo::get_fp_register_tag(unsigned reg){
 	unsigned rval = UNDEFINED;
 	for(int i = 0; i < pending_instructions.num_entries; i++){
 		if(!is_int(instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].opcode) && instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].dest == reg && ((int)pending_instructions.entries[i].issue > (int)current_latest_cycle)){
-		//if(instr_memory[(pending_instructions.entries[i].pc - instr_base_address) / 4].dest == reg && ((int)pending_instructions.entries[i].issue > (int)current_latest_cycle)){
 			current_latest_cycle = pending_instructions.entries[i].issue;
 			pindex = i;
 		}
