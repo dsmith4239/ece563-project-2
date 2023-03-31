@@ -15,7 +15,7 @@ inline unsigned float2unsigned(float value){
         return result;
 }
 
- convert an unsigned into a float 
+/* convert an unsigned into a float */
 inline float unsigned2float(unsigned value){
         float result;
         memcpy(&result, &value, sizeof value);
