@@ -21,6 +21,7 @@
         "new": "cpp",
         "cstring": "cpp",
         "iostream": "cpp",
-        "iomanip": "cpp"
+        "iomanip": "cpp",
+        "sstream": "cpp"
     }
 }

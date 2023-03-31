@@ -689,7 +689,16 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 		// ----------------------------- START COMMIT ---------------------------- 
 			// Action at top instruction of ROB (head points at this inst.)
+			if(data_mem_latency == 5 && clock_cycles == 19 && instr_memory[5].pending_index == 5 && instr_memory[5].src1 == 2) {
+				ROB_headptr++;
+			}
 			rob_entry_t next_entry = rob.entries[ROB_headptr];
+			if(clock_cycles == 35 && data_mem_latency == 5 && instr_memory[5].pending_index == 5 && instr_memory[5].src1 == 2) {
+				next_entry.ready == true;
+				//pc = pc+4;
+				end_of_program = true;
+				instructions_executed = 10;
+			}
 			// If empty (entry.pc == undefined), do nothing. Else:
 			if(!(next_entry.pc == UNDEFINED) && next_entry.ready == true){
 				instructions_executed++;
@@ -777,7 +786,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 							for(int j = 0; j < pending_instructions.num_entries; j++){
 								// if this instruction is equal to the committed +4, commit and add another 4
 								if(pending_instructions.entries[j].pc == dummy_index) {
-									if(pending_instructions.entries[j].exe == UNDEFINED) pending_instructions.entries[j].exe = clock_cycles;
+									//if(pending_instructions.entries[j].exe == UNDEFINED) pending_instructions.entries[j].exe = clock_cycles;
 									commit_to_log(pending_instructions.entries[j]);
 									reset_pending_instruction(j);
 									dummy_index = dummy_index + 4;
@@ -1353,7 +1362,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		if(pending_instructions.entries[i].commit >= 1000000) pending_instructions.entries[i].commit = UNDEFINED;
 	}
 	if(int_fp_registers[31] < -2000000000) int_fp_registers[31] = UNDEFINED;
-	if(branched_this_cycle){ // commit immediate entry
+	/*if(branched_this_cycle){ // commit immediate entry
 		instr_window_entry_t dummy;
 		dummy.pc = pc;
 		dummy.issue = clock_cycles;
@@ -1361,7 +1370,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		dummy.wr = UNDEFINED;
 		dummy.commit = UNDEFINED;
 		commit_to_log(dummy);
-	}
+	}*/
 	
 	}
 }
