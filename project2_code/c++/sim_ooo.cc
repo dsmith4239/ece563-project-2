@@ -701,7 +701,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					end_of_program = true;
 				}
 			// 	If ALU/store instruction and result ready:
-				if(next_entry.ready == true && isALUorSTORE(entry_instruction)){
+				if(next_entry.ready == true && (is_fp_alu(entry_instruction.opcode) || is_int(entry_instruction.opcode))){
 			// 		store in reg/memory, clean this ROB entry, increment head
 					// use sets (dest = value)
 					clean_rob(&rob.entries[ROB_headptr]);
@@ -730,14 +730,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 			// is memory written at the end or the beginning of commit? assuming end
 				if(next_entry.ready == true && (entry_instruction.opcode == SWS || entry_instruction.opcode == SW)){
 					if(next_entry.store_committed == false){
-						if(entry_instruction.opcode == SWS){	// fp
-							//write_memory(next_entry.destination,next_entry.value);
-						}
-						else{	// int
-							//write_memory(next_entry.destination,next_entry.value);
-						}
+						next_entry.store_exit_cc = clock_cycles + data_mem_latency;
 						next_entry.store_committed = true;
-						next_entry.store_exit_cc == clock_cycles + data_mem_latency;
+						next_entry.state = COMMIT;
 					}
 					else{
 						if(next_entry.store_exit_cc == clock_cycles) {
@@ -804,13 +799,16 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				}
 				// ----------------------------------------------------------
 			//	Increment head pointer. If pointer == rob size, wrap back to zero. clear pending instruction
+			// only do this if !store or (store & next entry pc == undefined (cleaned and committed))
+				if( (entry_instruction.opcode != SWS) || (entry_instruction.opcode == SWS && next_entry.pc == UNDEFINED) )
+				{
 				ROB_headptr++;
 				if(ROB_headptr == rob.num_entries) ROB_headptr = 0;
 				// COMMIT AND CLEAR PENDING INSTRUCTION
 				if(!branched_this_cycle)commit_to_log(pending_instructions.entries[entry_instruction.pending_index]);
 				reset_pending_instruction(entry_instruction.pending_index);
 				pending_instructions.entries[entry_instruction.pending_index].released_this_cycle = true;
-
+				}
 			}
 
 			if(end_of_program) {
@@ -826,7 +824,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 		// ------------------------------- START WR ------------------------------ 
 			// For each unit:
 			for(int i = 0; i < num_units; i++){
-				if(exec_units[i].busy == 0 && exec_units[i].pc != UNDEFINED){
+				if((exec_units[i].busy == 0 && exec_units[i].pc != UNDEFINED) || exec_units[i].type == MEMORY && exec_units[i].busy == 4294967294){ // undefined - 1: for stores
 			//  if instruction is done:
 			// 		write result to ROB. mark ready & write WR cycle in PI	
 					//if(exec_units[i].type == MEMORY || exec_units[i].type == ADDER) {
@@ -835,6 +833,13 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					for(int j = 0; j < rob.num_entries; j++){
 						if(rob.entries[j].pc == exec_units[i].pc && rob.entries[j].pc != UNDEFINED){
 							rob.entries[j].value = exec_units[i].result;
+
+							// if store, get latest value of reg
+							if(instr_memory[(rob.entries[j].pc-instr_base_address)/4].opcode == SWS){
+								rob.entries[j].value = float2unsigned(get_fp_register(instr_memory[(rob.entries[j].pc-instr_base_address)/4].src1));
+							}
+
+
 							rob.entries[j].ready = true;	// only make ready true for wr under certain conditions
 							rob.entries[j].state = WRITE_RESULT;
 							if(pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address) / 4].pending_index].wr == UNDEFINED) pending_instructions.entries[instr_memory[(rob.entries[j].pc - instr_base_address) / 4].pending_index].wr = clock_cycles;	// 4/1 offset
@@ -886,21 +891,6 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 
 					}
 				}
-
-				/*if(reservation_stations.entries[j].type == LOAD_B){ // if memory, check for stores/loads
-					for(int rob_ind = 0; rob_ind < pending_instructions.num_entries; rob_ind++){
-						// if address matches an address in rob,
-						if(reservation_stations.entries[rob_ind].value1 == reservation_stations.entries[j].value1){
-							if(instr_memory[(reservation_stations.entries[rob_ind].pc - instr_base_address) / 4].opcode == LW ||
-								instr_memory[(reservation_stations.entries[rob_ind].pc - instr_base_address) / 4].opcode == LWS) no_incomplete_loads = false;
-							else if(instr_memory[(reservation_stations.entries[rob_ind].pc - instr_base_address) / 4].opcode == SW ||
-								instr_memory[(reservation_stations.entries[rob_ind].pc - instr_base_address) / 4].opcode == SWS) no_incomplete_stores = false;
-							
-						}
-					}
-				}*/
-
-
 
 
 				instruction_t entry_instruction;
@@ -973,9 +963,9 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 							entry_instruction.opcode == SW){
 								unsigned effective_address = UNDEFINED;
 								effective_address = entry_instruction.immediate + get_int_register(entry_instruction.src2);
-								//rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].destination = effective_address;
-								if(entry_instruction.opcode == SWS) rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_fp_register(entry_instruction.src1);
-								else rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_int_register(entry_instruction.src1);
+								rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].destination = effective_address;
+								/*if(entry_instruction.opcode == SWS) rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_fp_register(entry_instruction.src1);
+								else rob.entries[instr_memory[(reservation_stations.entries[j].pc - instr_base_address) / 4].rob_index].value = get_int_register(entry_instruction.src1);*/
 						
 							// update address with effective address
 							reservation_stations.entries[j].address = effective_address;
@@ -1006,9 +996,12 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				for(int j = 0; j < rob.num_entries; j++){
 					for(int k = 0; k < reservation_stations.num_entries; k++){
 						if(reservation_stations.entries[k].tag1 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
+							if(exec_units[i].result != UNDEFINED && exec_units[i].released_this_cycle == true && !(exec_units[i].type == INTEGER && instr_memory[(reservation_stations.entries[k].pc - instr_base_address)/4].opcode == SWS)){// if !(opcode == store && unit == integer)
 							reservation_stations.entries[k].value1 = exec_units[i].result;
 							reservation_stations.entries[k].tag1 = UNDEFINED;
 							reservation_stations.entries[k].received_tag_this_cycle = true;
+							// if this is a store instruction, exe unit must not be an integer unit to write to tag1
+							}
 						}
 						if(reservation_stations.entries[k].tag2 == instr_memory[(exec_units[i].pc - instr_base_address) / 4].rob_index){
 							reservation_stations.entries[k].value2 = exec_units[i].result;
@@ -1086,6 +1079,10 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 					if((IReg.opcode == LWS || IReg.opcode == LW) && !is_int(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode)){
 						tag1 = false;
 					}
+					if((IReg.opcode == SWS) && !is_int(instr_memory[(reservation_stations.entries[tag_id].pc - instr_base_address) / 4].opcode)){
+						tag2 = false;
+						reservation_stations.entries[found_rs].tag2 = UNDEFINED;
+					}
 					
 				}
 
@@ -1093,17 +1090,28 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				
 
 				if(!tag1 && (IReg.opcode == LWS || IReg.opcode == LW)) reservation_stations.entries[found_rs].value1 = IReg.immediate;
-				//if(!tag1 && clock_cycles == 0 && IReg.src1 == 1)  reservation_stations.entries[found_rs].value1 = IReg.immediate;
 				//if(IReg.opcode == LWS && !tag1 && clock_cycles == 9 && issue_width != 4) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// NEW TO TC4CC9!
 				if((IReg.opcode == LWS || IReg.opcode == LW )&& !tag1) reservation_stations.entries[found_rs].value1 += get_int_register(IReg.src1);	// LOOK HERE IF OUTPUTS CHANGE WHEN SUBMIT
+				if(!tag1 && (IReg.opcode == SWS || IReg.opcode == SW)){
+					// check if register is in wr anywhere else (cdb working?)
+					
+				}
 				if(!tag2) reservation_stations.entries[found_rs].value2 = IReg.src2;
-				if(!tag2 && IReg.opcode == SWS || IReg.opcode == SW) reservation_stations.entries[found_rs].value2 = get_int_register(IReg.src2);
+				if(!tag2 && IReg.opcode == SWS || IReg.opcode == SW) {
+					reservation_stations.entries[found_rs].value2 = get_int_register(IReg.src2);
+					for(int i = 0; i < rob.num_entries; i++){
+						if(rob.entries[i].destination == IReg.src2){
+							reservation_stations.entries[found_rs].value2 = rob.entries[i].value;
+						}
+					}
+				}
 			
 				if(tag1){
 					reservation_stations.entries[found_rs].tag1 = get_fp_register_tag(IReg.src1);
 				}
 				if(tag2){
 					reservation_stations.entries[found_rs].tag2 = get_fp_register_tag(IReg.src2);
+					if(IReg.opcode == SWS) reservation_stations.entries[found_rs].tag2 = get_int_register_tag(IReg.src2);
 				}
 			
 			}
@@ -1119,10 +1127,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 						reservation_stations.entries[found_rs].destination = ROB_nextindex;//IReg.dest; // entry in rob
 						reservation_stations.entries[found_rs].pc = pc;
 						
-						/*if(IReg.opcode == XOR){
-							reservation_stations.entries[found_rs].value1 = UNDEFINED;
-							reservation_stations.entries[found_rs].value2 = UNDEFINED;
-						}*/
+						
 						break;
 					}
 				}

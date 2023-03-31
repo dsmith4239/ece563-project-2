@@ -1,8 +1,8 @@
 	LWS F1 0(R1)
-	LWS F2 0(R2)
+	LWS F2 4(R2)
 	ADDS F3 F1 F2
-	SWS F3 4(R1) storing to: a004
-	LWS F4 0(R3) loading from: a004
+	SWS F3 4(R1)
+	LWS F4 0(R3)
 	ADDS F1 F3 F4
 	ADDI R1 R1 8
 	SWS F1 0(R1)
