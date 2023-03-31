@@ -867,11 +867,27 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 				bool no_incomplete_stores = true;	// for load/store exe checking
 				bool no_incomplete_loads = true;	// for store exe checking
 				bool got = false;
-
-				// pending load: if anywhere in rob there is a load instruction 
-
-
+				bool this_is_load = instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == LWS || instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == LW;
+				bool this_is_store = instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == SWS || instr_memory[(reservation_stations.entries[j].pc - instr_base_address)/4].opcode == SW;
+				unsigned this_pc = reservation_stations.entries[j].pc;
+				// pending load: if anywhere in rob there is a store isntruction addressed to this address
 				if(reservation_stations.entries[j].type == LOAD_B){ // if memory, check for stores/loads
+					for(int res_ind = 0; res_ind < reservation_stations.num_entries; res_ind++){
+						unsigned offending_pc = reservation_stations.entries[res_ind].pc;
+						bool offending_is_load = instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == LWS || instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == LW;
+						bool offending_is_store = instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == SWS || instr_memory[(reservation_stations.entries[res_ind].pc - instr_base_address)/4].opcode == SW;
+						// and offending precedes this
+						if(this_is_load && offending_is_store && (offending_pc < this_pc)){
+							if(reservation_stations.entries[j].value1 == reservation_stations.entries[res_ind].value2 + reservation_stations.entries[res_ind].address){
+								no_incomplete_stores = false;
+							}
+						}
+
+
+					}
+				}
+
+				/*if(reservation_stations.entries[j].type == LOAD_B){ // if memory, check for stores/loads
 					for(int rob_ind = 0; rob_ind < pending_instructions.num_entries; rob_ind++){
 						// if address matches an address in rob,
 						if(reservation_stations.entries[rob_ind].value1 == reservation_stations.entries[j].value1){
@@ -882,7 +898,7 @@ void sim_ooo::run(unsigned cycles){	// cycles = stop target
 							
 						}
 					}
-				}
+				}*/
 
 
 
